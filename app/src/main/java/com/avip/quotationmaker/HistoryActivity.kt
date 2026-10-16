@@ -25,7 +25,7 @@ class HistoryActivity : AppCompatActivity() {
             compoundDrawablePadding = dp(8)
             onChange { query = it.trim().lowercase(); fill() }
         })
-        head.addView(chips(listOf("Draft", "Quoted"), "") { filter = it; fill() }, lp().margins(this, t = 10))
+        head.addView(chips(listOf("Follow-up due", "Draft", "Quoted", "Converted", "Lost"), "") { filter = it; fill() }, lp().margins(this, t = 10))
         root.addView(head)
         list = vertical { setPadding(dp(16), dp(8), dp(16), dp(24)) }
         root.addView(ScrollView(this).apply { addView(list) }, lp(MATCH, 0, 1f))
@@ -37,7 +37,14 @@ class HistoryActivity : AppCompatActivity() {
     private fun fill() {
         list.removeAllViews()
         val items = VisitStore.all(this).filter { v ->
-            (filter.isBlank() || (filter == "Quoted") == v.isQuoted) &&
+            when (filter) {
+                "Follow-up due" -> v.followUpDue
+                "Draft" -> !v.isQuoted
+                "Quoted" -> v.isQuoted && v.leadStatus == "Open"
+                "Converted" -> v.leadStatus == "Converted"
+                "Lost" -> v.leadStatus == "Lost"
+                else -> true
+            } &&
                 (query.isBlank() || listOf(v.name, v.mobile, v.number, v.address, v.district, v.caNo, v.pkg?.name ?: "")
                     .joinToString(" ").lowercase().contains(query))
         }
@@ -46,7 +53,7 @@ class HistoryActivity : AppCompatActivity() {
             return
         }
         items.forEach { v ->
-            list.addView(visitRow(v).apply {
+            list.addView(visitRow(v) { fill() }.apply {
                 setOnLongClickListener {
                     AlertDialog.Builder(this@HistoryActivity)
                         .setTitle("Delete ${v.name.ifBlank { v.number }}?")

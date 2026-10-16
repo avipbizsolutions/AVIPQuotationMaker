@@ -64,11 +64,16 @@ class VisitActivity : AppCompatActivity() {
     private lateinit var scroll: ScrollView
     private lateinit var backBtn: View
     private lateinit var nextBtn: TextView
-    private var sketchPad: DrawPad? = null
     private var signPad: DrawPad? = null
-    private var sketchDirty = false
     private var signDirty = false
     private var pendingPhoto: File? = null
+    private var photoToBank = false // next photo goes to the bank proof list
+    private var recorder: android.media.MediaRecorder? = null
+    private var recordingFile: File? = null
+    private var player: android.media.MediaPlayer? = null
+    private var playing = ""
+
+    private fun photoList() = if (photoToBank) v.bankDocs else v.photos
 
     // ---------- activity results ----------
 
@@ -78,7 +83,7 @@ class VisitActivity : AppCompatActivity() {
         if (ok && f.exists() && f.length() > 0) {
             lifecycleScope.launch {
                 withContext(Dispatchers.IO) { shrinkPhoto(f) }
-                v.photos += f.name; save(); render()
+                photoList().add(f.name); save(); render()
             }
         } else f.delete()
     }
@@ -87,11 +92,23 @@ class VisitActivity : AppCompatActivity() {
         if (uris.isNullOrEmpty()) return@registerForActivityResult
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
-                uris.take(8).forEach { u -> copyPhoto(u)?.let { v.photos += it.name } }
+                uris.take(8).forEach { u -> copyPhoto(u)?.let { photoList().add(it.name) } }
             }
             save(); render()
         }
     }
+
+    private val sketchLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        val f = VisitStore.file(this, v, "sketch.png")
+        v.sketch = if (f.exists()) f.name else ""
+        save(); render()
+    }
+
+    private val micPerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) startRecording() else toast("Microphone permission is needed for voice notes")
+    }
+
+    private val notifPerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     private val locationPerm = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
         if (r.values.any { it }) captureLocation() else toast("Location permission is needed to tag the site")
@@ -106,7 +123,8 @@ class VisitActivity : AppCompatActivity() {
         if (number != null && v.isQuoted) step = 4
 
         val root = vertical { setBackgroundColor(Ui.BG) }
-        root.addView(topBar("Site Visit", v.number, onBack = { leave() }))
+        root.addView(topBar("Site Visit", v.number, onBack = { leave() },
+            right = if (v.isQuoted) emptyList() else listOf(barButton(R.drawable.ic_delete) { discardDraft() })))
         stepBar = horizontal {
             setBackgroundColor(Color.WHITE)
             setPadding(dp(6), dp(10), dp(6), dp(8))
@@ -152,6 +170,8 @@ class VisitActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        stopRecording()
+        stopPlaying()
         savePads()
         save()
     }
@@ -160,8 +180,22 @@ class VisitActivity : AppCompatActivity() {
 
     private fun leave() {
         savePads(); save()
-        if (v.name.isBlank() && v.mobile.isBlank() && v.photos.isEmpty() && v.pkg == null) VisitStore.delete(this, v)
+        if (v.name.isBlank() && v.mobile.isBlank() && v.photos.isEmpty() && v.pkg == null && v.voiceNotes.isEmpty()) VisitStore.delete(this, v)
         finish()
+    }
+
+    private fun discardDraft() {
+        AlertDialog.Builder(this)
+            .setTitle("Delete this draft?")
+            .setMessage("${v.name.ifBlank { v.number }} — details, photos and voice notes will be removed from this phone.")
+            .setPositiveButton("Delete") { _, _ ->
+                stopRecording(); stopPlaying()
+                Reminders.cancel(this, v.number)
+                VisitStore.delete(this, v)
+                toast("Draft deleted")
+                finish()
+            }
+            .setNegativeButton("Cancel", null).show()
     }
 
     private fun next() {
@@ -170,6 +204,7 @@ class VisitActivity : AppCompatActivity() {
             if (v.mobile.filter { it.isDigit() }.length < 10) { toast("Enter a 10-digit WhatsApp number"); return }
         }
         if (step == 2 && v.pkg == null) { toast("Pick a system first"); return }
+        if (step == 2 && (v.pkg?.price ?: 0.0) <= 0) { toast("Enter the price of the custom system"); return }
         if (step == 4) { makePdfs(); return }
         go(step + 1)
     }
@@ -185,13 +220,6 @@ class VisitActivity : AppCompatActivity() {
     }
 
     private fun savePads() {
-        sketchPad?.let { pad ->
-            if (sketchDirty) {
-                val f = VisitStore.file(this, v, "sketch.png")
-                if (pad.isEmpty) { f.delete(); v.sketch = "" } else if (pad.save(f)) v.sketch = f.name
-                sketchDirty = false
-            }
-        }
         signPad?.let { pad ->
             if (signDirty) {
                 val f = VisitStore.file(this, v, "customer_sign.png")
@@ -207,7 +235,7 @@ class VisitActivity : AppCompatActivity() {
         savePads() // keep a sketch / signature in progress when the screen is rebuilt
         renderStepBar()
         body.removeAllViews()
-        sketchPad = null; signPad = null
+        signPad = null
         when (step) {
             0 -> customerStep()
             1 -> siteStep()
@@ -282,12 +310,26 @@ class VisitActivity : AppCompatActivity() {
             })
         })
 
-        body.addView(sectionTitle("KYC for PM Surya Ghar", "Optional now — needed for the application"), lp().margins(this, t = 20, b = 10))
-        body.addView(card {
-            field(this, "PAN", v.pan, "ABCDE1234F", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS, maxLen = 10) { v.pan = it.uppercase() }
-            field(this, "Aadhaar", v.aadhaar, "12 digits", InputType.TYPE_CLASS_NUMBER, maxLen = 12) { v.aadhaar = it }
-            addView(text("Aadhaar prints only on the internal site visit report, never on the quotation.", 11.5f, Ui.MUTED), lp().margins(context, t = 6))
+        body.addView(sectionTitle("Project funding", "How will the customer pay?"), lp().margins(this, t = 20, b = 10))
+        body.addView(tiles(listOf("Own fund" to R.drawable.ic_rupee, "Loan" to R.drawable.ic_bolt), v.funding, columns = 2) {
+            v.funding = it; save(); render()
         })
+        if (v.isLoan) {
+            body.addView(card {
+                addView(horizontal {
+                    addView(icon(R.drawable.ic_person, Ui.BRAND, 18))
+                    addView(text("KYC for the solar loan", 14f, Ui.TEXT, bold = true), lp(0, WRAP, 1f).margins(context, l = 6))
+                })
+                addView(text("Loan @ ${Fmt.num(Money.loanRate())}% for up to ${Money.maxYears()} years", 12f, Ui.MUTED), lp().margins(context, t = 2))
+                field(this, "PAN", v.pan, "ABCDE1234F", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS, maxLen = 10) { v.pan = it.uppercase() }
+                field(this, "Aadhaar", v.aadhaar, "12 digits", InputType.TYPE_CLASS_NUMBER, maxLen = 12) { v.aadhaar = it }
+                addView(text("Aadhaar prints only on the internal site visit report, never on the quotation.", 11.5f, Ui.MUTED), lp().margins(context, t = 6))
+            }, lp().margins(this, t = 4))
+        }
+
+        body.addView(sectionTitle("Bank proof for subsidy", "Account where the subsidy will be credited"), lp().margins(this, t = 20, b = 10))
+        body.addView(chips(listOf("Bank statement", "Passbook", "Cancelled cheque"), v.bankDocType) { v.bankDocType = it })
+        body.addView(photoGrid(v.bankDocs, bank = true), lp().margins(this, t = 10))
     }
 
     // ---------- step 2: site ----------
@@ -347,26 +389,46 @@ class VisitActivity : AppCompatActivity() {
 
         // photos
         body.addView(sectionTitle("Site photos", "Roof, meter, inverter wall, access stairs"), lp().margins(this, t = 20, b = 10))
-        body.addView(photoGrid())
+        body.addView(photoGrid(v.photos, bank = false))
 
-        // sketch
-        body.addView(horizontal {
-            addView(sectionTitle("Site sketch", "Draw the roof, obstacles and panel rows"), lp(0, WRAP, 1f))
-            addView(text("Undo", 14f, Ui.BRAND, bold = true) { setPadding(dp(10), dp(8), dp(6), dp(8)); setOnClickListener { sketchPad?.undo() } })
-            addView(text("Clear", 14f, Ui.DANGER, bold = true) { setPadding(dp(10), dp(8), dp(6), dp(8)); setOnClickListener { sketchPad?.clear() } })
-        }, lp().margins(this, t = 20, b = 10))
-        val pad = DrawPad(this, compass = true).apply {
+        // sketch (landscape, full screen)
+        body.addView(sectionTitle("Site sketch", "Roof outline, obstacles and panel rows — drawn sideways for more room"), lp().margins(this, t = 20, b = 10))
+        val sketchFile = VisitStore.file(this, v, "sketch.png").takeIf { v.sketch.isNotBlank() && it.exists() }
+        body.addView(FrameLayout(this).apply {
             background = rounded(Color.WHITE, dpf(14f), Ui.LINE, dp(1))
-            if (v.sketch.isNotBlank()) loadFrom(VisitStore.file(context, v, v.sketch))
-            onDrawn = { sketchDirty = true }
             clipToOutline = true
-        }
-        sketchPad = pad
-        body.addView(pad, lp(MATCH, dp(280)))
+            foreground = ripple()
+            if (sketchFile != null) {
+                addView(ImageView(context).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    BitmapFactory.decodeFile(sketchFile.absolutePath)?.let { setImageBitmap(it) }
+                }, FrameLayout.LayoutParams(MATCH, MATCH))
+                addView(tag("TAP TO EDIT", Ui.BRAND), FrameLayout.LayoutParams(WRAP, WRAP, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(10), dp(10)) })
+            } else {
+                addView(vertical {
+                    gravity = Gravity.CENTER
+                    addView(icon(R.drawable.ic_compass, Ui.BRAND, 44))
+                    addView(text("Draw site sketch", 16f, Ui.BRAND_DARK, bold = true), lp(WRAP, WRAP).margins(context, t = 8))
+                    addView(text("Opens full screen in landscape", 12f, Ui.MUTED), lp(WRAP, WRAP).margins(context, t = 2))
+                }, FrameLayout.LayoutParams(MATCH, MATCH))
+            }
+            setOnClickListener {
+                sketchLauncher.launch(Intent(context, SketchActivity::class.java)
+                    .putExtra(SketchActivity.EXTRA_FILE, VisitStore.file(context, v, "sketch.png").absolutePath))
+            }
+        }, lp(MATCH, (resources.displayMetrics.widthPixels - dp(32)) * 10 / 16))
+
+        // voice notes
+        body.addView(sectionTitle("Voice notes for installation team", "Explain anything that is hard to write"), lp().margins(this, t = 20, b = 10))
+        body.addView(voiceCard())
 
         // structure
-        body.addView(sectionTitle("Proposed structure", "Quantity, length and section size"), lp().margins(this, t = 20, b = 10))
-        body.addView(card(12) {
+        body.addView(sectionTitle("Proposed structure"), lp().margins(this, t = 20, b = 10))
+        body.addView(tiles(listOf("Magnelis" to R.drawable.cat_structure, "Normal GI" to R.drawable.ic_ruler), v.structureType, columns = 2) {
+            v.structureType = it; save(); render()
+        })
+        if (v.isGi) body.addView(card(12) {
+            addView(text("GI structure dimensions", 13f, Ui.MUTED, bold = true), lp().margins(context, b = 8))
             addView(horizontal {
                 addView(text("", 12f), lp(0, WRAP, 1.3f))
                 listOf("Qty", "Length (ft)", "Size").forEach { addView(text(it, 12f, Ui.MUTED, bold = true) { gravity = Gravity.CENTER }, lp(0, WRAP, 1f)) }
@@ -384,7 +446,7 @@ class VisitActivity : AppCompatActivity() {
                     cell(part.size, InputType.TYPE_CLASS_TEXT, "40×40") { part.size = it }
                 }, lp().margins(context, b = 6))
             }
-        })
+        }, lp().margins(this, t = 4))
 
         body.addView(card {
             field(this, "Notes for the installation team", v.siteNotes, "Access, water tank, earthing pit spot, special requests…",
@@ -392,9 +454,9 @@ class VisitActivity : AppCompatActivity() {
         }, lp().margins(this, t = 16))
     }
 
-    private fun photoGrid(): View {
+    private fun photoGrid(list: MutableList<String>, bank: Boolean): View {
         val box = vertical { }
-        val items: List<String?> = v.photos.toList() + listOf(null)
+        val items: List<String?> = list.toList() + listOf(null)
         items.chunked(3).forEach { row ->
             box.addView(horizontal {
                 row.forEach { name ->
@@ -406,9 +468,9 @@ class VisitActivity : AppCompatActivity() {
                         cell.addView(vertical {
                             gravity = Gravity.CENTER
                             addView(icon(R.drawable.ic_camera, Ui.BRAND, 32))
-                            addView(text("Add photo", 12.5f, Ui.BRAND_DARK, bold = true), lp(WRAP, WRAP).margins(context, t = 4))
+                            addView(text(if (bank) "Add proof" else "Add photo", 12.5f, Ui.BRAND_DARK, bold = true), lp(WRAP, WRAP).margins(context, t = 4))
                         }, FrameLayout.LayoutParams(MATCH, MATCH))
-                        cell.setOnClickListener { addPhoto() }
+                        cell.setOnClickListener { addPhoto(bank) }
                     } else {
                         val f = VisitStore.file(context, v, name)
                         cell.addView(ImageView(context).apply {
@@ -422,7 +484,7 @@ class VisitActivity : AppCompatActivity() {
                             setPadding(dp(5), dp(5), dp(5), dp(5))
                             setOnClickListener {
                                 AlertDialog.Builder(this@VisitActivity).setTitle("Remove this photo?")
-                                    .setPositiveButton("Remove") { _, _ -> f.delete(); v.photos.remove(name); save(); render() }
+                                    .setPositiveButton("Remove") { _, _ -> f.delete(); list.remove(name); save(); render() }
                                     .setNegativeButton("Cancel", null).show()
                             }
                         }, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.TOP or Gravity.END).apply { setMargins(0, dp(6), dp(6), 0) })
@@ -435,16 +497,115 @@ class VisitActivity : AppCompatActivity() {
         return box
     }
 
-    private fun addPhoto() {
-        AlertDialog.Builder(this).setTitle("Add site photo")
+    private fun addPhoto(bank: Boolean) {
+        photoToBank = bank
+        AlertDialog.Builder(this).setTitle(if (bank) "Add bank proof photo" else "Add site photo")
             .setItems(arrayOf("Take photo with camera", "Choose from gallery")) { _, which ->
                 if (which == 0) {
-                    val f = VisitStore.file(this, v, "photo_${System.currentTimeMillis()}.jpg")
+                    val f = VisitStore.file(this, v, (if (bank) "bank_" else "photo_") + "${System.currentTimeMillis()}.jpg")
                     pendingPhoto = f
                     try { takePhoto.launch(VisitStore.uri(this, f)) } catch (_: Exception) { toast("Camera not available") }
                 } else pickPhoto.launch("image/*")
             }.show()
     }
+
+    // ---------- voice notes ----------
+
+    private fun voiceCard(): View = card {
+        v.voiceNotes.forEachIndexed { i, name ->
+            val f = VisitStore.file(context, v, name)
+            addView(horizontal {
+                val isPlaying = playing == name
+                addView(badge(if (isPlaying) R.drawable.ic_close else R.drawable.ic_chat, if (isPlaying) Ui.DANGER else Ui.BLUE, 38).apply {
+                    setOnClickListener { if (isPlaying) { stopPlaying(); render() } else play(f, name) }
+                })
+                addView(vertical {
+                    addView(text("Voice note ${i + 1}", 14f, Ui.TEXT, bold = true))
+                    addView(text((if (isPlaying) "Playing…  tap ■ to stop" else "Tap to play") + "  ·  " + duration(f), 12f, Ui.MUTED))
+                }, lp(0, WRAP, 1f).margins(context, l = 10))
+                addView(icon(R.drawable.ic_delete, Ui.DANGER, 36).apply {
+                    setPadding(dp(8), dp(8), dp(8), dp(8))
+                    setOnClickListener {
+                        AlertDialog.Builder(this@VisitActivity).setTitle("Delete voice note ${i + 1}?")
+                            .setPositiveButton("Delete") { _, _ -> stopPlaying(); f.delete(); v.voiceNotes.remove(name); save(); render() }
+                            .setNegativeButton("Cancel", null).show()
+                    }
+                })
+            }, lp().margins(context, b = 8))
+        }
+        val rec = recorder != null
+        addView(pillButton(if (rec) "Stop recording" else "Record voice note", if (rec) Ui.DANGER else Ui.BRAND, iconRes = if (rec) R.drawable.ic_close else R.drawable.ic_chat) {
+            if (recorder != null) { stopRecording(); render() } else askMic()
+        })
+        if (rec) addView(text("● Recording… speak clearly near the phone", 12.5f, Ui.DANGER, bold = true) { gravity = Gravity.CENTER }, lp().margins(context, t = 8))
+    }
+
+    private fun askMic() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRecording()
+        else micPerm.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    private fun startRecording() {
+        stopPlaying()
+        val f = VisitStore.file(this, v, "voice_${System.currentTimeMillis()}.m4a")
+        try {
+            @Suppress("DEPRECATION")
+            val r = if (android.os.Build.VERSION.SDK_INT >= 31) android.media.MediaRecorder(this) else android.media.MediaRecorder()
+            r.setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+            r.setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
+            r.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
+            r.setAudioEncodingBitRate(64000)
+            r.setAudioSamplingRate(22050)
+            r.setOutputFile(f.absolutePath)
+            r.prepare()
+            r.start()
+            recorder = r
+            recordingFile = f
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } catch (_: Exception) {
+            f.delete(); recorder = null
+            toast("Could not start recording")
+        }
+        render()
+    }
+
+    private fun stopRecording() {
+        val r = recorder ?: return
+        recorder = null
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val f = recordingFile
+        recordingFile = null
+        try { r.stop() } catch (_: Exception) { f?.delete() }
+        r.release()
+        if (f != null && f.exists() && f.length() > 0) { v.voiceNotes += f.name; save() }
+    }
+
+    private fun play(f: File, name: String) {
+        stopPlaying()
+        try {
+            player = android.media.MediaPlayer().apply {
+                setDataSource(f.absolutePath)
+                setOnCompletionListener { stopPlaying(); render() }
+                prepare(); start()
+            }
+            playing = name
+        } catch (_: Exception) { toast("Could not play this note") }
+        render()
+    }
+
+    private fun stopPlaying() {
+        player?.let { try { it.stop() } catch (_: Exception) {}; it.release() }
+        player = null
+        playing = ""
+    }
+
+    private fun duration(f: File): String = try {
+        val m = android.media.MediaMetadataRetriever()
+        m.setDataSource(f.absolutePath)
+        val ms = m.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+        m.release()
+        "%d:%02d".format(ms / 60000, (ms / 1000) % 60)
+    } catch (_: Exception) { "" }
 
     // ---------- step 3: system ----------
 
@@ -483,15 +644,102 @@ class VisitActivity : AppCompatActivity() {
             val selected = v.pkg?.id == p.id
             body.addView(packageCard(p, selected, best != null && p.kw == best) {
                 if (v.pkg?.id != p.id) { v.pkg = p; v.discount = 0.0 }
+                customOpen = false; customFields = null
                 save(); render()
                 if (load != null && p.kw > load + 0.01) toast("Note: ${Fmt.num(p.kw)} kW is above the ${Fmt.num(load)} kW sanctioned load — load enhancement will be needed.")
             }, lp().margins(this, t = 12))
         }
+        // custom system filled in by the sales executive
+        if (v.pkg?.custom == true || customOpen) customForm(type)
+        else body.addView(horizontal {
+            background = rounded(Color.WHITE, dpf(18f), Ui.LINE, dp(1))
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            foreground = context.ripple()
+            addView(badge(R.drawable.ic_edit, Ui.MUTED, 42, square = true))
+            addView(vertical {
+                addView(text("Custom system", 16f, Ui.TEXT, bold = true))
+                addView(text("Not in the price list? Fill in brands, panels and price", 12.5f, Ui.MUTED))
+            }, lp(0, WRAP, 1f).margins(context, l = 12))
+            addView(text("+", 26f, Ui.BRAND, bold = true))
+            setOnClickListener { customOpen = true; customFields = null; render() }
+        }, lp().margins(this, t = 16))
+
         // a system chosen earlier that is no longer in the sheet
-        v.pkg?.let { p -> if (Catalog.byId(p.id) == null) {
+        v.pkg?.let { p -> if (!p.custom && Catalog.byId(p.id) == null) {
             body.addView(text("Selected earlier (no longer in price sheet):", 12.5f, Ui.MUTED), lp().margins(this, t = 16))
             body.addView(packageCard(p, true, false) {}, lp().margins(this, t = 6))
         } }
+    }
+
+    private var customOpen = false
+    private var customFields: MutableMap<String, String>? = null
+
+    private fun customForm(type: SystemType) {
+        val cur = v.pkg?.takeIf { it.custom }
+        val fields = customFields ?: mutableMapOf<String, String>().also { m ->
+            if (cur != null) {
+                val names = SystemPackage.CUSTOM_FIELDS.filter { cur.type == SystemType.HYBRID || !it.contains("Battery") }
+                names.zip(cur.rows).forEach { (k, row) -> m[k] = row.second }
+            } else {
+                m["Panel Warranty"] = "30 Years"; m["Inverter Warranty"] = "10 Years"
+                m["Structure"] = "APL Apollo / Magnelis"; m["DC Wire"] = "4 mm"; m["AC Wire"] = "4 mm"
+                m["Earthing Rod"] = "1 meter * 3 pc"
+                if (type == SystemType.HYBRID) m["Battery Warranty"] = "10 Years"
+            }
+            customFields = m
+        }
+        val summary = text("", 14f, Color.WHITE, bold = true)
+        fun rebuild() {
+            val pkg = SystemPackage.custom(type, fields)
+            if (v.pkg?.custom != true || v.pkg?.type != type) v.discount = 0.0
+            v.pkg = pkg
+            summary.text = if (pkg.totalWp > 0) "${Fmt.one(pkg.kwp)} kWp ${type.label} · ${pkg.totalPanels} panels" +
+                (if (pkg.price > 0) " · ${Fmt.inr(pkg.price)}" else "") else "Fill in the panels to see the size"
+        }
+        body.addView(vertical {
+            background = rounded(Color.WHITE, dpf(18f), Ui.BRAND, dp(3))
+            elevation = dpf(6f)
+            addView(horizontal {
+                background = gradient(dpf(16f), Ui.tierColor("custom"), Ui.TEXT)
+                setPadding(dp(16), dp(12), dp(12), dp(12))
+                addView(vertical {
+                    addView(text("CUSTOM ${type.label.uppercase()} SYSTEM", 11f, 0xDDFFFFFF.toInt(), bold = true) { letterSpacing = 0.1f })
+                    addView(summary)
+                }, lp(0, WRAP, 1f))
+                addView(text("Remove", 13f, Color.WHITE, bold = true) {
+                    setPadding(dp(10), dp(6), dp(4), dp(6))
+                    setOnClickListener {
+                        customOpen = false; customFields = null
+                        if (v.pkg?.custom == true) { v.pkg = null; v.discount = 0.0 }
+                        save(); render()
+                    }
+                })
+            }, lp().margins(context, l = 2, t = 2, r = 2))
+            val form = vertical { setPadding(dp(14), dp(4), dp(14), dp(16)) }
+            fun f(parent: LinearLayout, label: String, key: String, hint: String, number: Boolean = false) =
+                field(parent, label, fields[key] ?: "", hint,
+                    if (number) InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS) {
+                    fields[key] = it; rebuild(); save()
+                }
+            fun pair(l1: String, k1: String, h1: String, l2: String, k2: String, h2: String, number: Boolean) {
+                form.addView(horizontal {
+                    val a = vertical { }; val b = vertical { }
+                    f(a, l1, k1, h1, number); f(b, l2, k2, h2, number)
+                    addView(a, lp(0, WRAP, 1f).margins(context, r = 10)); addView(b, lp(0, WRAP, 1f))
+                })
+            }
+            pair("Panel brand", "Panel Brand", "e.g. Waaree", "Panel warranty", "Panel Warranty", "30 Years", false)
+            pair("DCR panel watt (Wp)", "DCR Panel Wattage", "e.g. 545", "No. of DCR panels", "No. of Panels (DCR)", "e.g. 6", true)
+            pair("Non-DCR panel watt", "Non-DCR Panel Wattage", "optional", "No. of Non-DCR", "No. of Panels (Non-DCR)", "0", true)
+            pair("Inverter", "Inverter Brand and Specification", "e.g. Deye 5kw", "Inverter warranty", "Inverter Warranty", "10 Years", false)
+            if (type == SystemType.HYBRID) pair("Battery", "Lithium Battery", "e.g. Deye 100 AH, 51.2 V", "Battery warranty", "Battery Warranty", "10 Years", false)
+            f(form, "Structure", "Structure", "e.g. APL Apollo / Magnelis")
+            pair("DC wire", "DC Wire", "4 mm", "AC wire", "AC Wire", "4 mm", false)
+            f(form, "Earthing", "Earthing Rod", "1 meter * 3 pc")
+            f(form, "Price incl. GST (₹) *", "Price (GST Included)", "Final selling price", number = true)
+            addView(form)
+        }, lp().margins(this, t = 16))
+        rebuild()
     }
 
     // ---------- step 4: price ----------
@@ -505,14 +753,20 @@ class VisitActivity : AppCompatActivity() {
         val effText = text("", 22f, 0xFF2E7D32.toInt(), bold = true)
         val effSub = text("", 12f, Ui.MUTED)
         val paybackText = text("", 20f, Ui.BLUE, bold = true)
+        val centralText = text("", 14f, 0xFF2E7D32.toInt(), bold = true)
+        val stateText = text("", 14f, 0xFF2E7D32.toInt(), bold = true)
+        var loanRefresh: (() -> Unit)? = null
         fun refresh() {
             finalText.text = Fmt.inr(v.finalPrice)
             discText.text = if (v.discount > 0) "− ${Fmt.inr(v.discount)}" else "No discount"
             val sub = Money.subsidy(p, v.subsidyOn)
             effText.text = Fmt.inr(v.finalPrice - sub)
-            effSub.text = if (sub > 0) "after ${Fmt.inr(sub)} PM Surya Ghar subsidy" else "no subsidy applied"
+            effSub.text = if (sub > 0) "after ${Fmt.inr(sub)} total subsidy" else "no subsidy applied"
             val pb = Money.paybackYears(v)
             paybackText.text = if (pb > 0) "${Fmt.one(pb)} yrs" else "—"
+            centralText.text = Fmt.inr(Money.central(p, v.subsidyOn))
+            stateText.text = Fmt.inr(Money.state(p, v.subsidyOn))
+            loanRefresh?.invoke()
         }
 
         // hero
@@ -570,7 +824,7 @@ class VisitActivity : AppCompatActivity() {
             addView(horizontal {
                 addView(badge(R.drawable.ic_rupee, 0xFF2E7D32.toInt(), 38))
                 addView(vertical {
-                    addView(text("PM Surya Ghar subsidy", 15f, Ui.TEXT, bold = true))
+                    addView(text("Government subsidy", 15f, Ui.TEXT, bold = true))
                     addView(text("On ${Fmt.num(p.dcrKw.takeIf { it > 0 } ?: p.kwp)} kW DCR panels · paid to customer's bank", 12f, Ui.MUTED))
                 }, lp(0, WRAP, 1f).margins(context, l = 10))
                 addView(SwitchCompat(context).apply {
@@ -578,11 +832,49 @@ class VisitActivity : AppCompatActivity() {
                     setOnCheckedChangeListener { _, on -> v.subsidyOn = on; save(); refresh() }
                 })
             })
+            addView(horizontal {
+                addView(text("PM Surya Ghar (central)", 13.5f, Ui.MUTED), lp(0, WRAP, 1f))
+                addView(centralText)
+            }, lp().margins(context, t = 10))
+            addView(horizontal {
+                addView(text(Catalog.settings["state_subsidy_name"], 13.5f, Ui.MUTED), lp(0, WRAP, 1f))
+                addView(stateText)
+            }, lp().margins(context, t = 4))
             addView(View(context).apply { setBackgroundColor(Ui.LINE) }, lp(MATCH, dp(1)).margins(context, t = 12, b = 10))
             addView(text("Customer's effective cost", 12.5f, Ui.MUTED))
             addView(effText)
             addView(effSub)
         }, lp().margins(this, t = 12))
+
+        // loan
+        if (v.isLoan) {
+            val emiText = text("", 26f, Ui.BLUE, bold = true)
+            val loanText = text("", 12.5f, Ui.MUTED)
+            val compare = text("", 12.5f, Ui.TEXT, bold = true)
+            loanRefresh = {
+                val amt = Money.loanAmount(v)
+                val emi = Money.emi(v)
+                emiText.text = "${Fmt.inr(emi)} / month"
+                loanText.text = "Loan ${Fmt.inr(amt)} @ ${Fmt.num(Money.loanRate())}% for ${v.loanYears} yrs · interest ${Fmt.inr(emi * v.loanYears * 12 - amt)}"
+                val save = Money.yearlySaving(p) / 12
+                compare.text = if (emi > 0 && save > 0) "Bill saving ${Fmt.inr(save)}/month covers ${((save / emi) * 100).roundToInt().coerceAtMost(999)}% of the EMI" else ""
+            }
+            body.addView(sectionTitle("Solar loan", "Interest ${Fmt.num(Money.loanRate())}% · up to ${Money.maxYears()} years"), lp().margins(this, t = 20, b = 10))
+            body.addView(card {
+                field(this, "Down payment by customer (₹)", v.downPayment, "0", InputType.TYPE_CLASS_NUMBER, R.drawable.ic_rupee) {
+                    v.downPayment = it; loanRefresh?.invoke()
+                }
+                addView(text("Tenure", 13f, Ui.MUTED, bold = true), lp().margins(context, t = 12, b = 6))
+                v.loanYears = v.loanYears.coerceIn(1, Money.maxYears())
+                addView(chips((1..Money.maxYears()).map { "$it yr" + if (it > 1) "s" else "" }, "${v.loanYears} yr" + if (v.loanYears > 1) "s" else "") { picked ->
+                    picked.substringBefore(' ').toIntOrNull()?.let { v.loanYears = it; save(); loanRefresh?.invoke() }
+                })
+                addView(text("Monthly EMI", 12.5f, Ui.MUTED), lp().margins(context, t = 14))
+                addView(emiText)
+                addView(loanText)
+                addView(compare, lp().margins(context, t = 6))
+            })
+        }
 
         // savings
         val units = Money.yearlyUnits(p)
@@ -633,7 +925,9 @@ class VisitActivity : AppCompatActivity() {
             addView(kv("Final price", Fmt.inr(v.finalPrice), true))
             val sub = Money.subsidy(p, v.subsidyOn)
             if (sub > 0) addView(kv("After subsidy", Fmt.inr(v.finalPrice - sub)))
-            addView(kv("Site photos", "${v.photos.size}"))
+            if (v.funding.isNotBlank()) addView(kv("Funding", if (v.isLoan) "Loan · EMI ${Fmt.inr(Money.emi(v))} × ${v.loanYears * 12}" else v.funding))
+            addView(kv("Photos · voice notes", "${v.photos.size} · ${v.voiceNotes.size}"))
+            if (v.bankDocs.isNotEmpty()) addView(kv("Bank proof", "${v.bankDocType.ifBlank { "Photo" }} (${v.bankDocs.size})"))
         })
 
         if (v.isQuoted) {
@@ -651,8 +945,9 @@ class VisitActivity : AppCompatActivity() {
                     background = rounded(Color.WHITE, dpf(23f), Ui.BRAND, dp(2))
                 }, lp(0, WRAP, 1f))
             }, lp().margins(this, t = 10))
-            body.addView(pillButton("Share both PDFs (office)", Ui.BRAND_LIGHT, Ui.BRAND_DARK, 46, R.drawable.ic_share) {
-                VisitStore.share(this, listOf(q, r).filter { it.exists() }, "Site visit ${v.number} — ${v.name}, ${v.district}")
+            body.addView(pillButton("Share PDFs + voice notes (office)", Ui.BRAND_LIGHT, Ui.BRAND_DARK, 46, R.drawable.ic_share) {
+                val files = listOf(q, r).filter { it.exists() } + v.voiceNotes.map { VisitStore.file(this, v, it) }.filter { it.exists() }
+                VisitStore.share(this, files, "Site visit ${v.number} — ${v.name}, ${v.district}")
             }, lp().margins(this, t = 10))
             body.addView(text("Changed something? Go back to any step, then tap Re-create PDFs.", 12f, Ui.MUTED) { gravity = Gravity.CENTER }, lp().margins(this, t = 12, b = 4))
         }
@@ -668,8 +963,124 @@ class VisitActivity : AppCompatActivity() {
             clipToOutline = true
         }
         signPad = pad
-        body.addView(pad, lp(MATCH, dp(170)))
+        body.addView(pad, lp(MATCH, dp(255)))
         body.addView(text("Visiting officer: ${v.officerName.ifBlank { Officer.name(this) }} · ${v.officerMobile.ifBlank { Officer.mobile(this) }}", 12.5f, Ui.MUTED), lp().margins(this, t = 10))
+
+        followUpSection()
+    }
+
+    // ---------- follow-up ----------
+
+    private val dayFmt = java.text.SimpleDateFormat("EEE, dd MMM yyyy", java.util.Locale.ENGLISH)
+
+    private fun followUpSection() {
+        body.addView(sectionTitle("Follow-up", "Reminder rings at 10:00 AM on the chosen day"), lp().margins(this, t = 24, b = 10))
+        body.addView(card {
+            addView(text("Lead status", 13f, Ui.MUTED, bold = true), lp().margins(context, b = 6))
+            addView(chips(listOf("Open", "Converted", "Lost"), v.leadStatus, Ui.BLUE) { st ->
+                v.leadStatus = st.ifBlank { "Open" }
+                if (v.leadStatus != "Open") Reminders.cancel(this@VisitActivity, v.number) else Reminders.schedule(this@VisitActivity, v)
+                save(); syncVisit(); render()
+            })
+            if (v.leadStatus == "Open") {
+                addView(horizontal {
+                    addView(badge(R.drawable.ic_history, if (v.followUpAt > 0) Ui.BRAND else Ui.MUTED, 42))
+                    addView(vertical {
+                        addView(text(if (v.followUpAt > 0) dayFmt.format(java.util.Date(v.followUpAt)) else "No follow-up date", 15f, Ui.TEXT, bold = true))
+                        addView(text(if (v.followUpAt > 0) "Call reminder at 10:00 AM" else "Pick the next date to call", 12f, Ui.MUTED))
+                    }, lp(0, WRAP, 1f).margins(context, l = 10))
+                    addView(text(if (v.followUpAt > 0) "Change" else "Set date", 14f, Ui.BRAND, bold = true) {
+                        setPadding(dp(8), dp(8), dp(4), dp(8))
+                    })
+                    setOnClickListener { pickFollowUpDate { day -> setFollowUp(day) } }
+                }, lp().margins(context, t = 14))
+                field(this, "What to discuss", v.followUpNote, "e.g. confirm loan papers, roof repair", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES) {
+                    v.followUpNote = it
+                }
+            }
+            addView(horizontal {
+                addView(pillButton("Call ${v.mobile}", Ui.BRAND, heightDp = 46, iconRes = R.drawable.ic_call) {
+                    VisitStore.call(this@VisitActivity, v.mobile)
+                }, lp(0, WRAP, 1f).margins(context, r = 10))
+                addView(pillButton("Log call", Ui.SUN, Ui.TEXT, 46, R.drawable.ic_edit) { logCall() }, lp(WRAP, WRAP))
+            }, lp().margins(context, t = 14))
+        })
+        if (v.followUps.isNotEmpty()) {
+            body.addView(card {
+                addView(text("Call history", 13f, Ui.MUTED, bold = true), lp().margins(context, b = 6))
+                v.followUps.reversed().forEach { f ->
+                    addView(vertical {
+                        addView(text("${java.text.SimpleDateFormat("dd MMM, h:mm a", java.util.Locale.ENGLISH).format(java.util.Date(f.at))} · ${f.outcome}", 13.5f, Ui.TEXT, bold = true))
+                        if (f.note.isNotBlank()) addView(text(f.note, 12.5f, Ui.MUTED))
+                    }, lp().margins(context, b = 8))
+                }
+            }, lp().margins(this, t = 10))
+        }
+    }
+
+    private fun pickFollowUpDate(onPicked: (Long) -> Unit) {
+        val c = java.util.Calendar.getInstance()
+        if (v.followUpAt > 0) c.timeInMillis = v.followUpAt else c.add(java.util.Calendar.DAY_OF_MONTH, 2)
+        android.app.DatePickerDialog(this, { _, y, m, d ->
+            val day = java.util.Calendar.getInstance().apply { set(y, m, d) }.timeInMillis
+            onPicked(day)
+        }, c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH), c.get(java.util.Calendar.DAY_OF_MONTH)).apply {
+            datePicker.minDate = System.currentTimeMillis() - 1000
+        }.show()
+    }
+
+    private fun setFollowUp(day: Long) {
+        v.followUpAt = Reminders.tenAm(day)
+        v.leadStatus = "Open"
+        save()
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) notifPerm.launch(Manifest.permission.POST_NOTIFICATIONS)
+        Reminders.schedule(this, v)
+        syncVisit()
+        toast("Reminder set for ${dayFmt.format(java.util.Date(v.followUpAt))}, 10:00 AM")
+        render()
+    }
+
+    /** Sends the updated status / follow-up date to the office sheet (only for submitted visits). */
+    private fun syncVisit() {
+        if (v.isQuoted) Remote.queue(this, Remote.visitSummary(this, v))
+    }
+
+    private fun logCall() {
+        val outcomes = listOf("Interested", "Call later", "Not reachable", "Converted", "Not interested")
+        var outcome = ""
+        var note = ""
+        var next = 0L
+        val box = vertical(16) {
+            addView(text("Result of the call", 13f, Ui.MUTED, bold = true), lp().margins(context, b = 6))
+            addView(chips(outcomes, "") { outcome = it })
+            val noteField = input("Note (optional)", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES)
+            noteField.onChange { note = it }
+            addView(noteField, lp().margins(context, t = 12))
+            val nextText = text("Next follow-up: not set  (tap to pick)", 14f, Ui.BRAND, bold = true) { setPadding(0, dp(14), 0, dp(4)) }
+            nextText.setOnClickListener { pickFollowUpDate { d -> next = Reminders.tenAm(d); nextText.text = "Next follow-up: ${dayFmt.format(java.util.Date(next))}, 10 AM" } }
+            addView(nextText)
+        }
+        AlertDialog.Builder(this).setTitle("Log follow-up call").setView(box)
+            .setPositiveButton("Save") { _, _ ->
+                if (outcome.isBlank()) { toast("Pick the call result"); return@setPositiveButton }
+                val entry = FollowUp(System.currentTimeMillis(), outcome, note, next)
+                v.followUps += entry
+                when (outcome) {
+                    "Converted" -> v.leadStatus = "Converted"
+                    "Not interested" -> v.leadStatus = "Lost"
+                    else -> v.leadStatus = "Open"
+                }
+                v.followUpAt = if (v.leadStatus == "Open") next else 0L
+                if (next > 0) v.followUpNote = ""
+                save()
+                Reminders.schedule(this, v)
+                Remote.queue(this, Remote.followUpEntry(this, v, entry))
+                syncVisit()
+                render()
+            }
+            .setNegativeButton("Cancel", null).show()
     }
 
     private fun customerMessage(): String {
@@ -698,6 +1109,8 @@ class VisitActivity : AppCompatActivity() {
             if (!ok) { toast("Could not create the PDF"); return@launch }
             save()
             Remote.queue(this@VisitActivity, Remote.visitSummary(this@VisitActivity, v))
+            Remote.queueFiles(this@VisitActivity, v)
+            Reminders.schedule(this@VisitActivity, v)
             step = 4
             render()
             scroll.scrollTo(0, 0)

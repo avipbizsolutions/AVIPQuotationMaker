@@ -30,6 +30,8 @@ data class SystemPackage(
     val type: SystemType,
     val name: String,
     val rows: List<Pair<String, String>>,
+    /** Filled in by the sales executive instead of coming from the sheet. */
+    val custom: Boolean = false,
 ) {
     /** Value of the first row whose label contains all [words] (case-insensitive). */
     fun v(vararg words: String): String = rows.firstOrNull { (label, _) ->
@@ -38,9 +40,10 @@ data class SystemPackage(
 
     fun n(vararg words: String): Double = Fmt.parse(v(*words)) ?: 0.0
 
-    val id get() = "${type.name}:$name"
-    val kw: Double get() = Regex("""(\d+(?:\.\d+)?)""").find(name)?.value?.toDoubleOrNull() ?: 0.0
+    val id get() = if (custom) "CUSTOM" else "${type.name}:$name"
+    val kw: Double get() = if (custom) kwp else Regex("""(\d+(?:\.\d+)?)""").find(name)?.value?.toDoubleOrNull() ?: 0.0
     val tier: String get() = when {
+        custom -> "Custom"
         name.contains("exec", true) -> "Executive"
         name.contains("smart", true) -> "Smart"
         name.contains("saathi", true) -> "Saathi"
@@ -92,7 +95,7 @@ data class SystemPackage(
             !l.contains("wattage") && !l.startsWith("no.") && !l.startsWith("no ") && !l.contains("total")
     }
 
-    fun toJson(): JSONObject = JSONObject().put("type", type.name).put("name", name)
+    fun toJson(): JSONObject = JSONObject().put("type", type.name).put("name", name).put("custom", custom)
         .put("rows", JSONArray().apply { rows.forEach { put(JSONArray().put(it.first).put(it.second)) } })
 
     companion object {
@@ -101,7 +104,32 @@ data class SystemPackage(
             return SystemPackage(
                 SystemType.of(o.optString("type")), o.optString("name"),
                 (0 until arr.length()).map { arr.getJSONArray(it).let { r -> r.optString(0) to r.optString(1) } },
+                o.optBoolean("custom", false),
             )
+        }
+
+        /** Labels of a custom system, in the same words as the sheet so every getter works. */
+        val CUSTOM_FIELDS = listOf(
+            "Panel Brand", "Panel Warranty", "DCR Panel Wattage", "No. of Panels (DCR)",
+            "Non-DCR Panel Wattage", "No. of Panels (Non-DCR)", "Inverter Brand and Specification",
+            "Inverter Warranty", "Lithium Battery", "Battery Warranty", "Structure",
+            "DC Wire", "AC Wire", "Earthing Rod", "Price (GST Included)",
+        )
+
+        /** Builds a custom system from the sales executive's entries (label → value). */
+        fun custom(type: SystemType, f: Map<String, String>): SystemPackage {
+            val rows = CUSTOM_FIELDS.filter { type == SystemType.HYBRID || !it.contains("Battery") }
+                .map { it.replace(" (DCR)", "").replace(" (Non-DCR)", "") to (f[it] ?: "").trim() }
+            val dcr = (Fmt.parse(f["DCR Panel Wattage"]) ?: 0.0) * (Fmt.parse(f["No. of Panels (DCR)"]) ?: 0.0)
+            val non = (Fmt.parse(f["Non-DCR Panel Wattage"]) ?: 0.0) * (Fmt.parse(f["No. of Panels (Non-DCR)"]) ?: 0.0)
+            val count = (Fmt.parse(f["No. of Panels (DCR)"]) ?: 0.0) + (Fmt.parse(f["No. of Panels (Non-DCR)"]) ?: 0.0)
+            val total = dcr + non
+            val all = rows + listOf(
+                "Total No. of Panels" to Fmt.num(count),
+                "Total Panel Wattage" to Fmt.num(total),
+                "Maximum Discount" to "0",
+            )
+            return SystemPackage(type, "${Fmt.one(total / 1000)} kW Custom", all, custom = true)
         }
     }
 }
@@ -133,12 +161,17 @@ class AppSettings(private val map: Map<String, String>) {
             "subsidy_per_kw_3rd" to "18000",
             "subsidy_max" to "78000",
             "subsidy_hybrid" to "yes",
+            "state_subsidy" to "20000",
+            "state_subsidy_name" to "Bihar Govt. subsidy",
+            // solar loan
+            "loan_rate" to "5.75",
+            "loan_max_years" to "10",
             // savings estimate
             "units_per_kw_per_day" to "4",
             "tariff_per_unit" to "7",
             "installs_count" to "300+",
             "q_terms_1" to "Price includes GST, transport, standard structure, wiring, earthing, lightning arrester and installation.",
-            "q_terms_2" to "PM Surya Ghar subsidy is paid by the Government directly into the customer's bank account after installation, net-metering and inspection. AVIP helps with the full application.",
+            "q_terms_2" to "PM Surya Ghar central subsidy and the Bihar Government subsidy are paid directly into the customer's bank account after installation, net-metering and inspection. AVIP helps with the full application.",
             "q_terms_3" to "Extra structure height, civil work or cable length beyond the standard design will be charged separately.",
             "q_terms_4" to "Warranty as per manufacturer terms and conditions.",
             "q_terms_5" to "Payment schedule as agreed at the time of booking.",
@@ -178,6 +211,11 @@ class Visit(
     var phase = ""
     var sanctionedLoad = ""
     var monthlyBill = ""
+    var funding = "" // "Loan" or "Own fund"
+    var downPayment = ""
+    var loanYears = 10
+    var bankDocType = "" // Bank statement / Passbook / Cancelled cheque
+    val bankDocs = mutableListOf<String>()
 
     // site
     var lat = 0.0
@@ -190,6 +228,8 @@ class Visit(
     var structureHeight = ""
     var cableRun = ""
     var siteNotes = ""
+    var structureType = "" // "Magnelis" or "Normal GI"
+    val voiceNotes = mutableListOf<String>()
     val photos = mutableListOf<String>() // file names inside the visit folder
     var sketch = "" // file name of the site sketch
     val structure: MutableList<StructurePart> = StructurePart.NAMES.map { StructurePart(it) }.toMutableList()
@@ -205,6 +245,15 @@ class Visit(
     var officerName = ""
     var officerMobile = ""
 
+    // follow-up
+    var followUpAt = 0L // reminder time (10 AM on the chosen day), 0 = none
+    var followUpNote = ""
+    var leadStatus = "Open" // Open / Converted / Lost
+    val followUps = mutableListOf<FollowUp>()
+
+    val isLoan get() = funding == "Loan"
+    val isGi get() = structureType == "Normal GI"
+    val followUpDue get() = leadStatus == "Open" && followUpAt > 0 && followUpAt <= endOfToday()
     val hasLocation get() = lat != 0.0 || lng != 0.0
     val isQuoted get() = quotedAt > 0
     val finalPrice: Double get() = ((pkg?.price ?: 0.0) - discount).coerceAtLeast(0.0)
@@ -222,6 +271,11 @@ class Visit(
         put("pkg", pkg?.toJson() ?: JSONObject.NULL); put("discount", discount); put("subsidyOn", subsidyOn)
         put("solarCapacityNote", solarCapacityNote)
         put("customerSign", customerSign); put("officerName", officerName); put("officerMobile", officerMobile)
+        put("funding", funding); put("downPayment", downPayment); put("loanYears", loanYears)
+        put("bankDocType", bankDocType); put("bankDocs", JSONArray(bankDocs))
+        put("structureType", structureType); put("voiceNotes", JSONArray(voiceNotes))
+        put("followUpAt", followUpAt); put("followUpNote", followUpNote); put("leadStatus", leadStatus)
+        put("followUps", JSONArray().apply { followUps.forEach { put(it.toJson()) } })
     }
 
     companion object {
@@ -245,13 +299,34 @@ class Visit(
             discount = o.optDouble("discount", 0.0); subsidyOn = o.optBoolean("subsidyOn", true)
             solarCapacityNote = o.optString("solarCapacityNote")
             customerSign = o.optString("customerSign"); officerName = o.optString("officerName"); officerMobile = o.optString("officerMobile")
+            funding = o.optString("funding"); downPayment = o.optString("downPayment"); loanYears = o.optInt("loanYears", 10)
+            bankDocType = o.optString("bankDocType")
+            o.optJSONArray("bankDocs")?.let { a -> for (i in 0 until a.length()) bankDocs += a.optString(i) }
+            structureType = o.optString("structureType")
+            o.optJSONArray("voiceNotes")?.let { a -> for (i in 0 until a.length()) voiceNotes += a.optString(i) }
+            followUpAt = o.optLong("followUpAt"); followUpNote = o.optString("followUpNote")
+            leadStatus = o.optString("leadStatus", "Open").ifBlank { "Open" }
+            o.optJSONArray("followUps")?.let { a -> for (i in 0 until a.length()) followUps += FollowUp.fromJson(a.getJSONObject(i)) }
         }
     }
 }
 
-/** Subsidy, savings and payback for a chosen system. */
+/** One follow-up call: when, what happened, and any note. */
+data class FollowUp(val at: Long, val outcome: String, val note: String, val nextAt: Long) {
+    fun toJson(): JSONObject = JSONObject().put("at", at).put("outcome", outcome).put("note", note).put("nextAt", nextAt)
+    companion object {
+        fun fromJson(o: JSONObject) = FollowUp(o.optLong("at"), o.optString("outcome"), o.optString("note"), o.optLong("nextAt"))
+    }
+}
+
+fun endOfToday(): Long = java.util.Calendar.getInstance().apply {
+    set(java.util.Calendar.HOUR_OF_DAY, 23); set(java.util.Calendar.MINUTE, 59); set(java.util.Calendar.SECOND, 59)
+}.timeInMillis
+
+/** Subsidy, savings, loan and payback for a chosen system. */
 object Money {
-    fun subsidy(p: SystemPackage?, on: Boolean): Double {
+    /** PM Surya Ghar central subsidy, paid on DCR capacity. */
+    fun central(p: SystemPackage?, on: Boolean): Double {
         if (p == null || !on) return 0.0
         val s = Catalog.settings
         if (p.type == SystemType.HYBRID && !s["subsidy_hybrid"].lowercase().startsWith("y")) return 0.0
@@ -260,6 +335,12 @@ object Money {
         val third = (minOf(kw, 3.0) - 2.0).coerceAtLeast(0.0) * s.num("subsidy_per_kw_3rd", 18000.0)
         return round(minOf(first + third, s.num("subsidy_max", 78000.0)))
     }
+
+    /** Bihar Government top-up, given along with the central subsidy. */
+    fun state(p: SystemPackage?, on: Boolean): Double =
+        if (central(p, on) > 0) Catalog.settings.num("state_subsidy", 20000.0) else 0.0
+
+    fun subsidy(p: SystemPackage?, on: Boolean): Double = central(p, on) + state(p, on)
 
     /** Units a year (kWh). */
     fun yearlyUnits(p: SystemPackage?): Double =
@@ -272,6 +353,24 @@ object Money {
         if (saving <= 0) return 0.0
         return (v.finalPrice - subsidy(v.pkg, v.subsidyOn)) / saving
     }
+
+    fun loanRate(): Double = Catalog.settings.num("loan_rate", 5.75)
+    fun maxYears(): Int = Catalog.settings.num("loan_max_years", 10.0).toInt().coerceAtLeast(1)
+
+    fun loanAmount(v: Visit): Double =
+        (v.finalPrice - (Fmt.parse(v.downPayment) ?: 0.0)).coerceAtLeast(0.0)
+
+    /** Monthly EMI on [principal] at the loan rate for [years]. */
+    fun emi(principal: Double, years: Int): Double {
+        if (principal <= 0 || years <= 0) return 0.0
+        val r = loanRate() / 12 / 100
+        val n = years * 12
+        if (r == 0.0) return principal / n
+        val f = Math.pow(1 + r, n.toDouble())
+        return principal * r * f / (f - 1)
+    }
+
+    fun emi(v: Visit): Double = emi(loanAmount(v), v.loanYears.coerceIn(1, maxYears()))
 }
 
 object Fmt {

@@ -89,6 +89,7 @@ class Pdfs(private val context: Context) {
             listOf(v.address, v.district, v.pincode).filter { it.isNotBlank() }.joinToString(", "),
             listOfNotNull(v.caNo.takeIf { it.isNotBlank() }?.let { "CA No: $it" }, v.discom.takeIf { it.isNotBlank() }).joinToString("  ·  "),
             listOfNotNull(v.sanctionedLoad.takeIf { it.isNotBlank() }?.let { "Sanctioned load: $it kW" }, v.phase.takeIf { it.isNotBlank() }).joinToString("  ·  "),
+            v.funding.takeIf { it.isNotBlank() }?.let { "Funding: $it" } ?: "",
         ).filter { it.isNotBlank() }
         cust.forEach { ly = wrapText(it, margin + 10f, ly, half - 20f, paint(8.5f), 11f) }
 
@@ -106,10 +107,11 @@ class Pdfs(private val context: Context) {
 
         // ---- bill of materials ----
         heading("What you get")
-        bomTable(p)
+        bomTable(p, v)
 
         // ---- price ----
         priceBlock(v, p)
+        if (v.isLoan) loanBlock(v, p)
 
         // ---- savings ----
         savingsBlock(v, p)
@@ -251,7 +253,7 @@ class Pdfs(private val context: Context) {
         canvas.drawText(text, x, r.bottom - 2.6f, p)
     }
 
-    private fun bomTable(p: SystemPackage) {
+    private fun bomTable(p: SystemPackage, v: Visit) {
         data class R(val item: String, val spec: String, val qty: String, val warranty: String)
         val rows = mutableListOf<R>()
         val tech = if (p.rows.any { it.first.contains("topcon", true) }) "TOPCon " else ""
@@ -262,7 +264,12 @@ class Pdfs(private val context: Context) {
         if (p.battery.isNotBlank()) rows += R("Lithium Battery", p.battery, "1 no", p.batteryWarranty)
         if (p.type == SystemType.HYBRID) rows += R("MCB Changeover", "Grid / backup switching", "1 no", "")
         p.v("acdb").takeIf { it.isNotBlank() }?.let { rows += R("ACDB + DCDB", "$it · with protection", "1 set", "") }
-        if (p.structure.isNotBlank()) rows += R("Mounting Structure", p.structure, "1 set", "")
+        val structureSpec = when {
+            v.structureType == "Magnelis" -> "Magnelis (zinc-magnesium coated) · " + p.structure.ifBlank { "APL Apollo" }
+            v.isGi -> "Hot-dip GI · " + p.structure.ifBlank { "APL Apollo" }
+            else -> p.structure
+        }
+        if (structureSpec.isNotBlank()) rows += R("Mounting Structure", structureSpec, "1 set", "")
         p.v("dc wire").takeIf { it.isNotBlank() }?.let { rows += R("DC Cable", it, "As required", "") }
         p.v("ac wire").takeIf { it.isNotBlank() }?.let { rows += R("AC Cable", it, "As required", "") }
         p.v("earthing").takeIf { it.isNotBlank() }?.let { rows += R("Earthing", it, "1 set", "") }
@@ -308,7 +315,9 @@ class Pdfs(private val context: Context) {
 
     private fun priceBlock(v: Visit, p: SystemPackage) {
         val sub = Money.subsidy(p, v.subsidyOn)
-        val h = 96f
+        val central = Money.central(p, v.subsidyOn)
+        val state = Money.state(p, v.subsidyOn)
+        val h = if (sub > 0) 112f else 96f
         need(h + 10f)
         val top = y
         val leftW = width * 0.56f
@@ -333,11 +342,20 @@ class Pdfs(private val context: Context) {
         canvas.drawRoundRect(RectF(rx, top, right, top + h), 8f, 8f, fill(if (sub > 0) 0xFFEAF6EC.toInt() else 0xFFF3F5F4.toInt()))
         var ry = top + 18f
         if (sub > 0) {
-            canvas.drawText("PM SURYA GHAR SUBSIDY", rx + 12f, ry, paint(7.5f, green, true)); ry += 17f
-            canvas.drawText("− " + Fmt.inr(sub), rx + 12f, ry, paint(15f, green, true)); ry += 10f
-            canvas.drawText("credited to your bank account", rx + 12f, ry, paint(7f, muted)); ry += 18f
-            canvas.drawText("YOUR EFFECTIVE COST", rx + 12f, ry, paint(7.5f, ink, true)); ry += 18f
-            canvas.drawText(Fmt.inr(v.finalPrice - sub), rx + 12f, ry, paint(18f, brandDark, true))
+            val rr = right - 12f
+            canvas.drawText("GOVERNMENT SUBSIDY", rx + 12f, ry, paint(7.5f, green, true)); ry += 14f
+            canvas.drawText("PM Surya Ghar (central)", rx + 12f, ry, paint(8f, ink))
+            canvas.drawText("− " + Fmt.inr(central), rr, ry, paint(8.5f, green, true, Paint.Align.RIGHT)); ry += 12f
+            if (state > 0) {
+                canvas.drawText(s["state_subsidy_name"], rx + 12f, ry, paint(8f, ink))
+                canvas.drawText("− " + Fmt.inr(state), rr, ry, paint(8.5f, green, true, Paint.Align.RIGHT)); ry += 12f
+            }
+            canvas.drawLine(rx + 12f, ry - 6f, rr, ry - 6f, stroke(rule, 0.6f))
+            canvas.drawText("Total subsidy", rx + 12f, ry + 3f, paint(8f, ink, true))
+            canvas.drawText("− " + Fmt.inr(sub), rr, ry + 3f, paint(10f, green, true, Paint.Align.RIGHT)); ry += 10f
+            canvas.drawText("credited to your bank account", rx + 12f, ry + 2f, paint(6.8f, muted)); ry += 16f
+            canvas.drawText("YOUR EFFECTIVE COST", rx + 12f, ry, paint(7.5f, ink, true)); ry += 17f
+            canvas.drawText(Fmt.inr(v.finalPrice - sub), rx + 12f, ry, paint(17f, brandDark, true))
         } else {
             canvas.drawText("PRICE INCLUDES", rx + 12f, ry, paint(7.5f, ink, true)); ry += 14f
             listOf("GST", "Transport & installation", "Wiring, earthing, LA", "Paperwork support").forEach {
@@ -345,6 +363,35 @@ class Pdfs(private val context: Context) {
             }
         }
         y = top + h + 14f
+    }
+
+    private fun loanBlock(v: Visit, p: SystemPackage) {
+        val amt = Money.loanAmount(v)
+        val emi = Money.emi(v)
+        if (amt <= 0 || emi <= 0) return
+        val months = v.loanYears * 12
+        need(62f)
+        val top = y
+        canvas.drawRoundRect(RectF(margin, top, right, top + 52f), 8f, 8f, fill(0xFFEAF1FB.toInt()))
+        canvas.drawText("SOLAR LOAN", margin + 12f, top + 15f, paint(7.5f, blue, true))
+        canvas.drawText("${Fmt.inr(emi)} / month", margin + 12f, top + 35f, paint(17f, blue, true))
+        canvas.drawText("for $months months", margin + 12f, top + 46f, paint(7.5f, muted))
+        val cols = listOf(
+            "Loan amount" to Fmt.inr(amt),
+            "Down payment" to Fmt.inr((Fmt.parse(v.downPayment) ?: 0.0).coerceAtLeast(0.0)),
+            "Interest rate" to "${Fmt.num(Money.loanRate())}% p.a.",
+            "Total interest" to Fmt.inr(emi * months - amt),
+        )
+        val startX = margin + 150f
+        val w = (right - 12f - startX) / cols.size
+        cols.forEachIndexed { i, (l, value) ->
+            val x = startX + i * w
+            canvas.drawText(l.uppercase(), x, top + 20f, paint(6.5f, muted, true))
+            canvas.drawText(value, x, top + 35f, paint(10f, ink, true))
+        }
+        val save = Money.yearlySaving(p) / 12
+        if (save > 0) canvas.drawText("Your electricity saving of about ${Fmt.inr(save)} a month pays a big part of this EMI.", startX, top + 47f, paint(7f, muted))
+        y = top + 62f
     }
 
     private fun savingsBlock(v: Visit, p: SystemPackage) {
@@ -355,7 +402,7 @@ class Pdfs(private val context: Context) {
         need(64f)
         val stats = listOf(
             "${Fmt.one(p.kwp)} kWp" to "system size",
-            "${Fmt.num(units / 12)} units" to "generated per month",
+            "${(units / 12).toInt()} units" to "generated per month",
             Fmt.inr(saving / 12) to "saved per month",
             (if (payback > 0) "${Fmt.one(payback)} years" else "—") to "payback",
             Fmt.inr(saving * 25) to "saved in 25 years",
@@ -383,7 +430,7 @@ class Pdfs(private val context: Context) {
             "Approval" to "DISCOM feasibility for your connection",
             "Install" to "AVIP installs & commissions the system",
             "Net meter" to "DISCOM fits net meter & inspects",
-            "Subsidy" to "credited to your bank account",
+            "Subsidy" to "central + Bihar subsidy to your bank",
         )
         need(66f)
         val w = width / steps.size
@@ -416,13 +463,15 @@ class Pdfs(private val context: Context) {
             "WhatsApp mobile" to v.mobile,
             "Consumer name" to v.name,
             "Address" to listOf(v.address, v.district, v.pincode).filter { it.isNotBlank() }.joinToString(", "),
-            "PAN" to v.pan,
-            "Aadhaar" to v.aadhaar,
+            "Project funding" to (if (v.isLoan) "Loan (${v.loanYears} yrs, EMI ${Fmt.inr(Money.emi(v))})" else v.funding),
+            "Bank proof for subsidy" to (if (v.bankDocs.isEmpty()) "" else "${v.bankDocType.ifBlank { "Photo" }} — ${v.bankDocs.size} photo(s) attached"),
+            "PAN" to (if (v.isLoan) v.pan else ""),
+            "Aadhaar" to (if (v.isLoan) v.aadhaar else ""),
             "Consumer / CA No" to v.caNo,
             "DISCOM · Connection" to listOf(v.discom, v.phase).filter { it.isNotBlank() }.joinToString(" · "),
             "Sanctioned load" to v.sanctionedLoad.let { if (it.isBlank()) "" else "$it kW" },
             "Monthly bill" to v.monthlyBill.let { if (it.isBlank()) "" else "₹$it" },
-        ))
+        ).filter { it.second.isNotBlank() || it.first !in setOf("PAN", "Aadhaar", "Bank proof for subsidy") })
 
         heading("Proposed solar system")
         grid(listOf(
@@ -430,7 +479,7 @@ class Pdfs(private val context: Context) {
             "Panel brand & capacity" to (p?.let { "${it.panelBrand} · ${it.panelSummary()}" } ?: ""),
             "Inverter brand & capacity" to (p?.inverter ?: ""),
             "Battery" to (p?.battery ?: ""),
-            "Structure" to (p?.structure ?: ""),
+            "Structure" to (v.structureType.ifBlank { p?.structure ?: "" }),
             "Quoted price" to (p?.let { Fmt.inr(v.finalPrice) + if (v.discount > 0) " (after ${Fmt.inr(v.discount)} discount)" else "" } ?: ""),
         ).filter { it.second.isNotBlank() })
 
@@ -460,7 +509,16 @@ class Pdfs(private val context: Context) {
 
         // structure
         heading("Proposed structure design")
-        structureTable(v)
+        if (v.isGi) structureTable(v)
+        else grid(listOf("Structure type" to v.structureType.ifBlank { "Not selected" }, "Dimensions" to "Standard (Magnelis)"))
+
+        val follow = listOf(
+            "Lead status" to v.leadStatus,
+            "Next follow-up" to (if (v.followUpAt > 0 && v.leadStatus == "Open") dateFmt.format(Date(v.followUpAt)) + ", 10:00 AM" else ""),
+            "Follow-up note" to v.followUpNote,
+            "Voice notes" to (if (v.voiceNotes.isEmpty()) "" else "${v.voiceNotes.size} recording(s) — shared with this report"),
+        ).filter { it.second.isNotBlank() }
+        if (follow.size > 1) { heading("Follow-up"); grid(follow) }
 
         if (v.siteNotes.isNotBlank()) textSection("Notes for installation team", listOf(v.siteNotes))
 
@@ -481,6 +539,12 @@ class Pdfs(private val context: Context) {
                 }
                 y += h + gap
             }
+        }
+
+        val bank = v.bankDocs.map { VisitStore.file(context, v, it) }.filter { it.exists() }
+        if (bank.isNotEmpty()) {
+            heading("Bank proof for subsidy — ${v.bankDocType.ifBlank { "photo" }}")
+            bank.forEach { image(it, width, 300f, border = true) }
         }
 
         signatures(v, "Customer signature")

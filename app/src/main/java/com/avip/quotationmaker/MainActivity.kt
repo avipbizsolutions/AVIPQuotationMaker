@@ -61,14 +61,26 @@ class MainActivity : AppCompatActivity() {
         val visits = VisitStore.all(this)
         val dayStart = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
         val monthStart = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0) }.timeInMillis
-        val today = visits.count { it.createdAt >= dayStart }
+        // a visit counts once the site visit is submitted (quotation created)
+        val today = visits.count { it.isQuoted && it.quotedAt >= dayStart }
         val monthQuotes = visits.filter { it.isQuoted && it.quotedAt >= monthStart }
+        val due = visits.filter { it.followUpDue }.sortedBy { it.followUpAt }
         inner.addView(horizontal {
             addView(stat("$today", "Visits today", Ui.BRAND), lp(0, WRAP, 1f).margins(context, r = 8))
-            addView(stat("${monthQuotes.size}", "Quotes this month", Ui.BLUE), lp(0, WRAP, 1f).margins(context, r = 8))
-            addView(stat(Fmt.inr(monthQuotes.sumOf { it.finalPrice }).let { if (it.length > 9) Fmt.one(monthQuotes.sumOf { v -> v.finalPrice } / 100000) + " L" else it },
-                "Value quoted", 0xFFB7791F.toInt()), lp(0, WRAP, 1f))
+            addView(stat("${monthQuotes.size}", "Visits this month", Ui.BLUE), lp(0, WRAP, 1f).margins(context, r = 8))
+            addView(stat("${due.size}", "Follow-ups due", if (due.isNotEmpty()) Ui.DANGER else Ui.MUTED), lp(0, WRAP, 1f))
         }, lp().margins(this, b = 14))
+
+        if (due.isNotEmpty()) {
+            inner.addView(horizontal {
+                addView(icon(R.drawable.ic_call, Ui.DANGER, 18))
+                addView(text("Follow-up calls due", 17f, Ui.TEXT, bold = true), lp(0, WRAP, 1f).margins(context, l = 8))
+            }, lp().margins(this, b = 8))
+            due.take(5).forEach { inner.addView(visitRow(it) { build() }, lp().margins(this, b = 10)) }
+            if (due.size > 5) inner.addView(text("+ ${due.size - 5} more in All Visits", 13f, Ui.BRAND, bold = true) {
+                setOnClickListener { startActivity(Intent(context, HistoryActivity::class.java)) }
+            }, lp().margins(this, b = 14))
+        }
 
         // Shortcuts
         inner.addView(horizontal {
@@ -105,7 +117,7 @@ class MainActivity : AppCompatActivity() {
                 addView(text("No visits yet.\nTap New Site Visit at the customer's home.", 14f, Ui.MUTED) { gravity = Gravity.CENTER }, lp(WRAP, WRAP).margins(context, t = 8))
             })
         } else {
-            visits.take(4).forEach { inner.addView(visitRow(it), lp().margins(this, b = 10)) }
+            visits.filter { it !in due }.take(4).forEach { inner.addView(visitRow(it) { build() }, lp().margins(this, b = 10)) }
         }
     }
 

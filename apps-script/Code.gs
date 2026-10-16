@@ -1,24 +1,43 @@
 /**
- * AVIP Quotation Maker – receives site visits and sales-executive sign-ups from the app.
+ * AVIP Quotation Maker – office log for the Sales Head.
  *
- * Setup (one time):
- * 1. Open the Google Sheet that should hold the visit log > Extensions > Apps Script,
- *    paste this file, Save.
- * 2. Deploy > New deployment > type "Web app"
+ * Receives from every sales executive's phone:
+ *   • each submitted site visit (one row per visit, updated when it changes)
+ *   • each follow-up call result
+ *   • the Quotation PDF, Site Visit Report PDF and voice notes (saved to Google Drive,
+ *     linked from the visit row)
+ * and keeps a live "Dashboard" tab: visits per executive, today / this month,
+ * lead status, follow-ups due and coming up.
+ *
+ * Setup (one time, from the Sales Head's / office Google account):
+ * 1. Create a new Google Sheet, e.g. "AVIP Site Visits Log" (keep it private).
+ *    Extensions > Apps Script, paste this file, Save.
+ * 2. Run the function "setup" once (Run ▶) and allow the permissions it asks for
+ *    (Sheets + Drive). It creates the tabs, the Dashboard and the Drive folder.
+ * 3. Deploy > New deployment > type "Web app"
  *      Execute as: Me    Who has access: Anyone
- * 3. Copy the web app URL (ends in /exec) into the price sheet's "App Settings" tab,
- *    key "visit_log_url". Phones pick it up on their next launch — no app update needed.
- *
- * Tabs "Site Visits" and "Sales Team" are created automatically on the first entry.
+ *    Copy the web app URL (ends in /exec).
+ * 4. Paste it in the price sheet's "App Settings" tab, key "visit_log_url".
+ *    Phones pick it up on their next launch — no app update needed.
+ * When you change this code later: Deploy > Manage deployments > Edit > Version: New version.
  */
 const SHARED_KEY = 'avip-quote-7Qm4'; // must match Remote.kt
+const FOLDER_NAME = 'AVIP Site Visits';
 
 const VISIT_HEADERS = [
-  'Received', 'Visit No', 'Status', 'Sales Executive', 'Exec Mobile', 'Customer', 'WhatsApp',
+  'Received', 'Visit No', 'Visit Date', 'Sales Executive', 'Exec Mobile', 'Customer', 'WhatsApp',
   'Address', 'District', 'PIN', 'CA No', 'DISCOM', 'Sanctioned Load (kW)', 'Monthly Bill',
-  'PAN', 'Aadhaar (last 4)', 'Roof', 'Roof Size', 'Shading', 'GPS', 'Map',
-  'System Type', 'System', 'kWp', 'List Price', 'Discount', 'Final Price', 'Subsidy', 'Notes', 'App Version',
+  'Funding', 'PAN', 'Aadhaar (last 4)', 'Roof', 'Roof Size', 'Shading', 'Structure', 'Map',
+  'System Type', 'System', 'kWp', 'List Price', 'Discount', 'Final Price',
+  'Central Subsidy', 'Bihar Subsidy', 'Loan Amount', 'EMI', 'Loan Years',
+  'Lead Status', 'Next Follow-up', 'Follow-up Note', 'Calls', 'Last Call',
+  'Quotation PDF', 'Site Report PDF', 'Voice Notes', 'Site Notes', 'Photos', 'App Version',
 ];
+// column numbers (1-based) used below and in the Dashboard formulas
+const COL = {};
+VISIT_HEADERS.forEach((h, i) => COL[h] = i + 1);
+
+const FOLLOW_HEADERS = ['Received', 'Call Time', 'Visit No', 'Sales Executive', 'Customer', 'WhatsApp', 'Result', 'Note', 'Next Follow-up', 'Lead Status'];
 const TEAM_HEADERS = ['Updated', 'Name', 'Mobile', 'Employee Code', 'Install ID', 'App Version'];
 
 function doPost(e) {
@@ -26,38 +45,14 @@ function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
     if (d.key !== SHARED_KEY) return reply({ ok: false, error: 'unauthorised' });
-    lock.waitLock(10000);
+    lock.waitLock(20000);
     const book = SpreadsheetApp.getActiveSpreadsheet();
 
-    if (d.kind === 'visit') {
-      const sheet = tab(book, 'Site Visits', VISIT_HEADERS);
-      const row = [
-        new Date(), clean(d.number), clean(d.status), clean(d.officer), clean(d.officerMobile),
-        clean(d.customer), clean(d.mobile), clean(d.address, 300), clean(d.district), clean(d.pincode),
-        clean(d.caNo), clean(d.discom), clean(d.sanctionedLoad), clean(d.monthlyBill),
-        clean(d.pan), clean(d.aadhaarLast4), clean(d.roof), clean(d.roofSize), clean(d.shading),
-        clean(d.location), d.location ? 'https://maps.google.com/?q=' + clean(d.location) : '',
-        clean(d.systemType), clean(d.system), Number(d.kwp) || 0, Number(d.price) || 0,
-        Number(d.discount) || 0, Number(d.finalPrice) || 0, Number(d.subsidy) || 0,
-        clean(d.notes, 500), clean(d.appVersion),
-      ];
-      // Re-created quotations update the same row (matched on Visit No).
-      const last = sheet.getLastRow();
-      const ids = last > 1 ? sheet.getRange(2, 2, last - 1, 1).getValues().map(r => String(r[0])) : [];
-      const i = ids.indexOf(String(row[1]));
-      if (i >= 0) sheet.getRange(i + 2, 1, 1, row.length).setValues([row]);
-      else sheet.appendRow(row);
-    } else if (d.kind === 'officer') {
-      const sheet = tab(book, 'Sales Team', TEAM_HEADERS);
-      const row = [new Date(), clean(d.name), clean(d.mobile), clean(d.code), clean(d.installId), clean(d.appVersion)];
-      const last = sheet.getLastRow();
-      const ids = last > 1 ? sheet.getRange(2, 5, last - 1, 1).getValues().map(r => String(r[0])) : [];
-      const i = ids.indexOf(String(row[4]));
-      if (i >= 0) sheet.getRange(i + 2, 1, 1, row.length).setValues([row]);
-      else sheet.appendRow(row);
-    } else {
-      return reply({ ok: false, error: 'unknown kind' });
-    }
+    if (d.kind === 'visit') saveVisit(book, d);
+    else if (d.kind === 'followup') saveFollowUp(book, d);
+    else if (d.kind === 'file') saveFile(book, d);
+    else if (d.kind === 'officer') saveOfficer(book, d);
+    else return reply({ ok: false, error: 'unknown kind' });
     return reply({ ok: true });
   } catch (err) {
     return reply({ ok: false, error: String(err) });
@@ -66,6 +61,142 @@ function doPost(e) {
   }
 }
 
+/** Run once from the editor: creates tabs, Dashboard and the Drive folder. */
+function setup() {
+  const book = SpreadsheetApp.getActiveSpreadsheet();
+  tab(book, 'Site Visits', VISIT_HEADERS);
+  tab(book, 'Follow-ups', FOLLOW_HEADERS);
+  tab(book, 'Sales Team', TEAM_HEADERS);
+  dashboard(book, true);
+  folder();
+}
+
+// ---------------------------------------------------------------- visits
+
+function saveVisit(book, d) {
+  const sheet = tab(book, 'Site Visits', VISIT_HEADERS);
+  const row = sheet.getLastRow() > 1 ? findRow(sheet, d.number) : -1;
+  const keep = row > 0 ? sheet.getRange(row, 1, 1, VISIT_HEADERS.length).getValues()[0] : null;
+  const loc = clean(d.location);
+  const values = [
+    new Date(), clean(d.number), isoDate(d.visitDate), clean(d.officer), clean(d.officerMobile),
+    clean(d.customer), clean(d.mobile), clean(d.address, 300), clean(d.district), clean(d.pincode),
+    clean(d.caNo), clean(d.discom), clean(d.sanctionedLoad), clean(d.monthlyBill),
+    clean(d.funding), clean(d.pan), clean(d.aadhaarLast4), clean(d.roof), clean(d.roofSize), clean(d.shading),
+    clean(d.structure), loc ? 'https://maps.google.com/?q=' + loc : '',
+    clean(d.systemType), clean(d.system), num(d.kwp), num(d.price), num(d.discount), num(d.finalPrice),
+    num(d.centralSubsidy), num(d.stateSubsidy), num(d.loanAmount), Math.round(num(d.emi)), num(d.loanYears) || '',
+    clean(d.leadStatus) || 'Open', isoDate(d.followUp), clean(d.followUpNote, 300), num(d.calls), clean(d.lastCall, 300),
+    keep ? keep[COL['Quotation PDF'] - 1] : '', keep ? keep[COL['Site Report PDF'] - 1] : '',
+    keep ? keep[COL['Voice Notes'] - 1] : '',
+    clean(d.notes, 500), num(d.photos), clean(d.appVersion),
+  ];
+  if (row > 0) sheet.getRange(row, 1, 1, values.length).setValues([values]);
+  else sheet.appendRow(values);
+}
+
+function saveFollowUp(book, d) {
+  tab(book, 'Follow-ups', FOLLOW_HEADERS).appendRow([
+    new Date(), clean(d.callDate), clean(d.number), clean(d.officer), clean(d.customer), clean(d.mobile),
+    clean(d.outcome), clean(d.note, 500), isoDate(d.nextDate), clean(d.leadStatus),
+  ]);
+}
+
+function saveOfficer(book, d) {
+  const sheet = tab(book, 'Sales Team', TEAM_HEADERS);
+  const row = [new Date(), clean(d.name), clean(d.mobile), clean(d.code), clean(d.installId), clean(d.appVersion)];
+  const last = sheet.getLastRow();
+  const ids = last > 1 ? sheet.getRange(2, 5, last - 1, 1).getValues().map(r => String(r[0])) : [];
+  const i = ids.indexOf(String(row[4]));
+  if (i >= 0) sheet.getRange(i + 2, 1, 1, row.length).setValues([row]);
+  else sheet.appendRow(row);
+}
+
+// ---------------------------------------------------------------- files
+
+function saveFile(book, d) {
+  const name = clean(d.name);
+  const sub = subFolder(clean(d.number) + ' - ' + clean(d.customer));
+  // a re-created PDF replaces the old one
+  const old = sub.getFilesByName(name);
+  while (old.hasNext()) old.next().setTrashed(true);
+  const file = sub.createFile(Utilities.newBlob(Utilities.base64Decode(d.data), d.mime || 'application/octet-stream', name));
+
+  const sheet = tab(book, 'Site Visits', VISIT_HEADERS);
+  const row = findRow(sheet, d.number);
+  if (row < 0) return;
+  let col;
+  if (/^Quotation/i.test(name)) col = COL['Quotation PDF'];
+  else if (/^Site-Visit/i.test(name)) col = COL['Site Report PDF'];
+  else col = COL['Voice Notes'];
+  if (col === COL['Voice Notes']) {
+    sheet.getRange(row, col).setValue(sub.getUrl()); // folder holds all notes
+  } else {
+    sheet.getRange(row, col).setValue(file.getUrl());
+  }
+}
+
+function folder() {
+  const it = DriveApp.getFoldersByName(FOLDER_NAME);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(FOLDER_NAME);
+}
+
+function subFolder(name) {
+  const parent = folder();
+  const it = parent.getFoldersByName(name);
+  return it.hasNext() ? it.next() : parent.createFolder(name);
+}
+
+// ---------------------------------------------------------------- dashboard
+
+function dashboard(book, rebuild) {
+  let sh = book.getSheetByName('Dashboard');
+  if (sh && !rebuild) return;
+  if (!sh) sh = book.insertSheet('Dashboard', 0);
+  sh.clear();
+  const L = c => columnLetter(COL[c]);
+  const SV = "'Site Visits'!A2:" + columnLetter(VISIT_HEADERS.length);
+  const today = '"&TEXT(TODAY(),"yyyy-mm-dd")&"';
+  const monthStart = '"&TEXT(EOMONTH(TODAY(),-1)+1,"yyyy-mm-dd")&"';
+  const in7 = '"&TEXT(TODAY()+7,"yyyy-mm-dd")&"';
+  // Column letters inside QUERY must be the column's position letter (A, B …) of the range.
+  const q = c => L(c);
+
+  const blocks = [
+    ['A1', 'AVIP Solar — Sales Dashboard (updates live)'],
+    ['A3', 'Visits by sales executive — this month'],
+    ['A4', '=IFERROR(QUERY(' + SV + ',"select ' + q('Sales Executive') + ', count(' + q('Visit No') + '), sum(' + q('kWp') + '), sum(' + q('Final Price') +
+      ') where ' + q('Visit Date') + ' >= date \'' + monthStart + '\' group by ' + q('Sales Executive') +
+      ' order by count(' + q('Visit No') + ') desc label ' + q('Sales Executive') + ' \'Executive\', count(' + q('Visit No') + ') \'Visits\', sum(' + q('kWp') +
+      ') \'kWp quoted\', sum(' + q('Final Price') + ') \'Value quoted (₹)\'",0),"No visits this month yet")'],
+    ['F3', 'Visits today'],
+    ['F4', '=IFERROR(QUERY(' + SV + ',"select ' + q('Sales Executive') + ', count(' + q('Visit No') + ') where ' + q('Visit Date') +
+      ' = date \'' + today + '\' group by ' + q('Sales Executive') + ' label ' + q('Sales Executive') + ' \'Executive\', count(' + q('Visit No') + ') \'Today\'",0),"None today")'],
+    ['I3', 'Lead status by executive (all time)'],
+    ['I4', '=IFERROR(QUERY(' + SV + ',"select ' + q('Sales Executive') + ', count(' + q('Visit No') + ') where ' + q('Visit No') +
+      ' is not null group by ' + q('Sales Executive') + ' pivot ' + q('Lead Status') + ' label ' + q('Sales Executive') + ' \'Executive\'",0),"")'],
+    ['A14', 'Follow-ups DUE (today or overdue)'],
+    ['A15', '=IFERROR(QUERY(' + SV + ',"select ' + [q('Next Follow-up'), q('Sales Executive'), q('Customer'), q('WhatsApp'), q('System'), q('Final Price'), q('Follow-up Note'), q('Last Call'), q('Visit No')].join(', ') +
+      ' where ' + q('Lead Status') + ' = \'Open\' and ' + q('Next Follow-up') + ' <= date \'' + today + '\' order by ' + q('Next Follow-up') +
+      ' label ' + q('Next Follow-up') + ' \'Due\', ' + q('Sales Executive') + ' \'Executive\'",0),"Nothing due 🎉")'],
+    ['A40', 'Follow-ups in the next 7 days'],
+    ['A41', '=IFERROR(QUERY(' + SV + ',"select ' + [q('Next Follow-up'), q('Sales Executive'), q('Customer'), q('WhatsApp'), q('System'), q('Final Price'), q('Follow-up Note')].join(', ') +
+      ' where ' + q('Lead Status') + ' = \'Open\' and ' + q('Next Follow-up') + ' > date \'' + today + '\' and ' + q('Next Follow-up') + ' <= date \'' + in7 + '\' order by ' + q('Next Follow-up') +
+      ' label ' + q('Next Follow-up') + ' \'Date\', ' + q('Sales Executive') + ' \'Executive\'",0),"None scheduled")'],
+  ];
+  blocks.forEach(([cell, v]) => {
+    const r = sh.getRange(cell);
+    if (String(v).startsWith('=')) r.setFormula(v); else r.setValue(v).setFontWeight('bold').setFontColor('#0E6B3A');
+  });
+  sh.getRange('A1').setFontSize(16);
+  sh.getRange('A15:A39').setNumberFormat('dd-mmm-yyyy');
+  sh.getRange('A41:A60').setNumberFormat('dd-mmm-yyyy');
+  sh.setFrozenRows(1);
+  sh.setColumnWidths(1, 12, 130);
+}
+
+// ---------------------------------------------------------------- helpers
+
 function tab(book, name, headers) {
   let sheet = book.getSheetByName(name);
   if (!sheet) {
@@ -73,9 +204,35 @@ function tab(book, name, headers) {
     sheet.appendRow(headers);
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#E8F3EC');
+    if (name === 'Site Visits') {
+      sheet.getRange('C:C').setNumberFormat('dd-mmm-yyyy');
+      sheet.getRange(1, COL['Next Follow-up'], sheet.getMaxRows(), 1).setNumberFormat('dd-mmm-yyyy');
+      dashboard(book, false);
+    }
   }
   return sheet;
 }
+
+function findRow(sheet, number) {
+  const last = sheet.getLastRow();
+  if (last < 2) return -1;
+  const ids = sheet.getRange(2, COL['Visit No'], last - 1, 1).getValues().map(r => String(r[0]));
+  const i = ids.indexOf(String(number));
+  return i >= 0 ? i + 2 : -1;
+}
+
+function isoDate(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || ''));
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : '';
+}
+
+function columnLetter(n) {
+  let s = '';
+  while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
+function num(v) { return Number(v) || 0; }
 
 // Trim, cap length, and stop text being read as a formula.
 function clean(value, max) {

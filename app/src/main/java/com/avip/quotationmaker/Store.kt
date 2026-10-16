@@ -81,7 +81,10 @@ object VisitStore {
         File(d, "visit.json").takeIf { it.exists() }?.let { runCatching { Visit.fromJson(JSONObject(it.readText())) }.getOrNull() }
     }.sortedByDescending { it.updatedAt }
 
-    fun delete(c: Context, v: Visit) { dir(c, v.number).deleteRecursively() }
+    fun delete(c: Context, v: Visit) {
+        Reminders.cancel(c, v.number)
+        dir(c, v.number).deleteRecursively()
+    }
 
     // ---- sharing ----
 
@@ -99,7 +102,8 @@ object VisitStore {
         val uris = ArrayList(files.map { uri(a, it) })
         val i = if (uris.size == 1) Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0])
         else Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
-        i.setType("application/pdf").putExtra(Intent.EXTRA_TEXT, message).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        i.setType(if (files.all { it.name.endsWith(".pdf") }) "application/pdf" else "*/*")
+            .putExtra(Intent.EXTRA_TEXT, message).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         a.startActivity(Intent.createChooser(i, "Share"))
     }
 
@@ -150,23 +154,53 @@ object Remote {
         flushAsync(c)
     }
 
+    private val day = SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH) // ISO: the script turns it into a real date
+
     fun visitSummary(c: Context, v: Visit): JSONObject {
         val p = v.pkg
         return JSONObject().put("kind", "visit").put("number", v.number)
-            .put("officer", Officer.name(c)).put("officerMobile", Officer.mobile(c))
+            .put("visitDate", day.format(Date(v.createdAt)))
+            .put("officer", v.officerName.ifBlank { Officer.name(c) }).put("officerMobile", v.officerMobile.ifBlank { Officer.mobile(c) })
             .put("customer", v.name).put("mobile", v.mobile).put("address", v.address)
             .put("district", v.district).put("pincode", v.pincode).put("caNo", v.caNo).put("discom", v.discom)
             .put("sanctionedLoad", v.sanctionedLoad).put("monthlyBill", v.monthlyBill)
-            .put("pan", v.pan).put("aadhaarLast4", v.aadhaar.filter { it.isDigit() }.takeLast(4))
-            .put("roof", listOf(v.roofType, v.floors.let { if (it.isBlank()) "" else "$it floor" }).filter { it.isNotBlank() }.joinToString(", "))
-            .put("roofSize", if (v.roofLength.isNotBlank() && v.roofWidth.isNotBlank()) "${v.roofLength} × ${v.roofWidth} ft" else "")
-            .put("shading", v.shading)
-            .put("location", if (v.hasLocation) "${v.lat},${v.lng}" else "")
-            .put("systemType", p?.type?.label ?: "").put("system", p?.name ?: "")
+            .put("funding", v.funding)
+            .put("pan", if (v.isLoan) v.pan else "").put("aadhaarLast4", if (v.isLoan) v.aadhaar.filter { it.isDigit() }.takeLast(4) else "")
+            .put("roof", listOf(v.roofType, v.floors).filter { it.isNotBlank() }.joinToString(", "))
+            .put("roofSize", if (v.roofLength.isNotBlank() && v.roofWidth.isNotBlank()) "${v.roofLength} x ${v.roofWidth} ft" else "")
+            .put("shading", v.shading).put("structure", v.structureType)
+            .put("location", if (v.hasLocation) String.format(Locale.US, "%.6f,%.6f", v.lat, v.lng) else "")
+            .put("systemType", p?.type?.label ?: "").put("system", (p?.name ?: "") + if (p?.custom == true) " (custom)" else "")
             .put("kwp", p?.kwp ?: 0.0).put("price", p?.price ?: 0.0).put("discount", v.discount)
-            .put("finalPrice", v.finalPrice).put("subsidy", Money.subsidy(p, v.subsidyOn))
-            .put("status", if (v.isQuoted) "Quotation given" else "Survey only")
-            .put("notes", v.siteNotes).put("appVersion", Updater.currentVersionName(c))
+            .put("finalPrice", v.finalPrice)
+            .put("centralSubsidy", Money.central(p, v.subsidyOn)).put("stateSubsidy", Money.state(p, v.subsidyOn))
+            .put("loanAmount", if (v.isLoan) Money.loanAmount(v) else 0.0).put("emi", if (v.isLoan) Money.emi(v) else 0.0)
+            .put("loanYears", if (v.isLoan) v.loanYears else 0)
+            .put("leadStatus", v.leadStatus)
+            .put("followUp", if (v.followUpAt > 0 && v.leadStatus == "Open") day.format(Date(v.followUpAt)) else "")
+            .put("followUpNote", v.followUpNote)
+            .put("calls", v.followUps.size)
+            .put("lastCall", v.followUps.lastOrNull()?.let { "${day.format(Date(it.at))}: ${it.outcome}" + if (it.note.isBlank()) "" else " — ${it.note}" } ?: "")
+            .put("notes", v.siteNotes).put("voiceNotes", v.voiceNotes.size).put("photos", v.photos.size)
+            .put("appVersion", Updater.currentVersionName(c))
+    }
+
+    fun followUpEntry(c: Context, v: Visit, f: FollowUp): JSONObject = JSONObject().put("kind", "followup")
+        .put("number", v.number).put("officer", v.officerName.ifBlank { Officer.name(c) })
+        .put("customer", v.name).put("mobile", v.mobile)
+        .put("callDate", SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ENGLISH).format(Date(f.at)))
+        .put("outcome", f.outcome).put("note", f.note)
+        .put("nextDate", if (f.nextAt > 0) day.format(Date(f.nextAt)) else "").put("leadStatus", v.leadStatus)
+
+    /** PDFs and voice notes go to the office Google Drive (one folder per visit). Sent one by one. */
+    fun queueFiles(c: Context, v: Visit) {
+        val files = listOf(VisitStore.quotationPdf(c, v), VisitStore.reportPdf(c, v)) +
+            v.voiceNotes.map { VisitStore.file(c, v, it) }
+        files.filter { it.exists() }.forEach { f ->
+            queue(c, JSONObject().put("kind", "file").put("number", v.number).put("customer", v.name)
+                .put("officer", v.officerName).put("name", f.name).put("path", f.absolutePath)
+                .put("mime", if (f.name.endsWith(".pdf")) "application/pdf" else "audio/mp4"))
+        }
     }
 
     fun flushAsync(context: Context) {
@@ -182,7 +216,15 @@ object Remote {
                         val arr = JSONArray(p.getString("pending", "[]") ?: "[]")
                         if (arr.length() == 0) null else arr.getJSONObject(0)
                     } ?: break
-                    if (!post(endpoint, JSONObject(first.toString()).put("key", SHARED_KEY).toString())) break
+                    val item = JSONObject(first.toString()).put("key", SHARED_KEY)
+                    val path = item.optString("path")
+                    val sent = if (item.optString("kind") == "file") {
+                        val f = File(path)
+                        // file deleted or too big: drop it from the queue
+                        if (!f.exists() || f.length() > 25_000_000L) true
+                        else post(endpoint, item.put("data", android.util.Base64.encodeToString(f.readBytes(), android.util.Base64.NO_WRAP)).toString())
+                    } else post(endpoint, item.toString())
+                    if (!sent) break
                     synchronized(this) {
                         val arr = JSONArray(p.getString("pending", "[]") ?: "[]")
                         val rest = JSONArray()
@@ -202,8 +244,8 @@ object Remote {
         return try {
             conn.requestMethod = "POST"
             conn.doOutput = true
-            conn.connectTimeout = 10000
-            conn.readTimeout = 15000
+            conn.connectTimeout = 15000
+            conn.readTimeout = 60000
             conn.instanceFollowRedirects = true
             conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
             conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }

@@ -48,19 +48,30 @@ The app keeps the last copy, so it works without signal at site.
 `company_name`, `brand_name`, `tagline`, `phone`, `whatsapp`, `email`, `website`, `gstin`,
 `address`, `bank_account_name`, `bank_account_no`, `bank_ifsc`, `bank_branch`,
 `quote_validity_days` (7), `subsidy_per_kw_first_2` (30000), `subsidy_per_kw_3rd` (18000),
-`subsidy_max` (78000), `subsidy_hybrid` (yes), `units_per_kw_per_day` (4),
+`subsidy_max` (78000), `subsidy_hybrid` (yes), `state_subsidy` (20000), `state_subsidy_name` (Bihar Govt. subsidy),
+`loan_rate` (5.75), `loan_max_years` (10), `units_per_kw_per_day` (4),
 `tariff_per_unit` (7), `sqft_per_kw` (100), `installs_count` (300+),
 `q_terms_1` … `q_terms_12` (quotation terms), `announcement` (home-screen notice),
 `visit_log_url` (see below).
 
-## Visit log in Google Sheets (one-time setup)
-1. Open the Google Sheet that should hold the log → Extensions → Apps Script → paste
-   `apps-script/Code.gs` → Save.
-2. Deploy → New deployment → Web app → Execute as **Me**, access **Anyone** → Deploy.
-3. Put the `/exec` URL in **App Settings → visit_log_url**.
+## Sales Head: team log, follow-ups and dashboard (one-time setup)
+Every **submitted** visit (quotation created) from every phone lands in one private Google Sheet,
+with the Quotation PDF, Site Visit Report and voice notes saved in Google Drive and linked.
 
-Every quotation then adds (or updates) a row in **Site Visits**, and each sales executive's
-sign-up lands in **Sales Team**.
+1. From the Sales Head / office Google account, create a new Google Sheet ("AVIP Site Visits Log").
+2. Extensions → Apps Script → paste `apps-script/Code.gs` → Save → run **setup** once and allow access.
+3. Deploy → New deployment → Web app → Execute as **Me**, access **Anyone** → Deploy.
+4. Put the `/exec` URL in the price sheet's **App Settings → visit_log_url**.
+
+Tabs you get:
+| Tab | What it shows |
+|---|---|
+| **Dashboard** | Visits per executive this month (count, kWp, value), visits today, Open / Converted / Lost per executive, follow-ups due today or overdue, follow-ups in the next 7 days. Updates live. |
+| **Site Visits** | One row per visit: executive, customer, system, price, central + Bihar subsidy, loan & EMI, lead status, next follow-up, last call result, and links to the PDFs and voice notes. Use Data → Create a filter to slice by executive or date. |
+| **Follow-ups** | Every follow-up call logged in the app: who called, result, note, next date. |
+| **Sales Team** | Each executive's phone, name and app version. |
+
+Files are saved in Drive under **AVIP Site Visits / <visit no> - <customer>**.
 
 ## Build
 Every push to `main` builds a signed APK with GitHub Actions and publishes it as the latest

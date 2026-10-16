@@ -6,12 +6,13 @@ import android.graphics.Color
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
+import androidx.appcompat.app.AlertDialog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** One saved visit in a list: customer, system, price and status. */
-fun Activity.visitRow(v: Visit): View = card(14) {
+/** One saved visit in a list: customer, system, price, status, follow-up, call / delete. */
+fun Activity.visitRow(v: Visit, onChanged: () -> Unit = {}): View = card(14) {
     foreground = context.ripple()
     val p = v.pkg
     addView(horizontal {
@@ -19,7 +20,7 @@ fun Activity.visitRow(v: Visit): View = card(14) {
         addView(vertical {
             addView(text(v.name.ifBlank { "Unnamed customer" }, 15.5f, Ui.TEXT, bold = true) { maxLines = 1 })
             val line2 = listOfNotNull(
-                p?.let { "${it.name} ${it.type.label}" },
+                p?.let { "${Fmt.one(it.kwp)} kWp ${it.type.label}" },
                 v.district.ifBlank { v.address.substringAfterLast(',').trim() }.takeIf { it.isNotBlank() },
             ).joinToString(" · ").ifBlank { "Survey started" }
             addView(text(line2, 12.5f, Ui.MUTED) { maxLines = 1 })
@@ -28,9 +29,44 @@ fun Activity.visitRow(v: Visit): View = card(14) {
         addView(vertical {
             gravity = Gravity.END
             if (p != null) addView(text(Fmt.inr(v.finalPrice), 15f, Ui.BRAND_DARK, bold = true))
-            addView(if (v.isQuoted) tag("QUOTED", Ui.BRAND) else tag("DRAFT", Ui.SUN, Ui.TEXT), lp(WRAP, WRAP).margins(context, t = 4))
+            val t = when {
+                !v.isQuoted -> tag("DRAFT", Ui.SUN, Ui.TEXT)
+                v.leadStatus == "Converted" -> tag("CONVERTED", 0xFF2E7D32.toInt())
+                v.leadStatus == "Lost" -> tag("LOST", Ui.MUTED)
+                else -> tag("QUOTED", Ui.BRAND)
+            }
+            addView(t, lp(WRAP, WRAP).margins(context, t = 4))
         })
     })
+    // follow-up / actions line
+    val hasFollow = v.leadStatus == "Open" && v.followUpAt > 0
+    if (hasFollow || v.mobile.isNotBlank() || !v.isQuoted) {
+        addView(horizontal {
+            if (hasFollow) {
+                val due = v.followUpDue
+                addView(icon(R.drawable.ic_history, if (due) Ui.DANGER else Ui.BLUE, 16))
+                addView(text((if (due) "Follow-up due · " else "Follow-up · ") + SimpleDateFormat("dd MMM", Locale.ENGLISH).format(Date(v.followUpAt)),
+                    12.5f, if (due) Ui.DANGER else Ui.BLUE, bold = true), lp(0, WRAP, 1f).margins(context, l = 6))
+            } else addView(View(context), lp(0, 1, 1f))
+            if (!v.isQuoted) addView(icon(R.drawable.ic_delete, Ui.DANGER, 36).apply {
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                setOnClickListener {
+                    AlertDialog.Builder(this@visitRow)
+                        .setTitle("Delete draft of ${v.name.ifBlank { v.number }}?")
+                        .setMessage("Details, photos and voice notes of this draft will be removed from this phone.")
+                        .setPositiveButton("Delete") { _, _ -> VisitStore.delete(this@visitRow, v); onChanged() }
+                        .setNegativeButton("Cancel", null).show()
+                }
+            })
+            if (v.mobile.filter { it.isDigit() }.length >= 10) addView(horizontal {
+                background = rounded(Ui.BRAND_LIGHT, dpf(16f))
+                setPadding(dp(12), dp(7), dp(14), dp(7))
+                addView(icon(R.drawable.ic_call, Ui.BRAND, 16))
+                addView(text("Call", 13.5f, Ui.BRAND_DARK, bold = true), lp(WRAP, WRAP).margins(context, l = 6))
+                setOnClickListener { VisitStore.call(this@visitRow, v.mobile) }
+            }, lp(WRAP, WRAP).margins(context, l = 6))
+        }, lp().margins(context, t = 10))
+    }
     setOnClickListener {
         startActivity(Intent(context, VisitActivity::class.java).putExtra(VisitActivity.EXTRA_NUMBER, v.number))
     }
