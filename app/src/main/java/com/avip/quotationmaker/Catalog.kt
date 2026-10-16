@@ -18,11 +18,20 @@ import java.net.URLEncoder
  */
 object Catalog {
 
-    const val SHEET_ID = "1DxfN4bjham7oLE-Su-NMhbRhporjH0681RzBFg-YeCs"
+    /**
+     * "AVIP Customer Prices (App)": holds only the customer-price tabs (pulled from the
+     * costing sheet with IMPORTRANGE) and App Settings, so the costing sheet can stay private.
+     */
+    const val SHEET_ID = "1g4CSk_r3YaaBZ9RO4vGIO8n14GrVrKaejB35HNPCjXc"
+    /** Old location, used only until the new sheet is shared. */
+    private const val OLD_SHEET_ID = "1DxfN4bjham7oLE-Su-NMhbRhporjH0681RzBFg-YeCs"
     private const val SETTINGS_TAB = "App Settings"
 
-    /** Tab ids, so renaming a tab doesn't break the app. Names are the fallback. */
-    private val GIDS = mapOf(SystemType.ONGRID to "118618691", SystemType.HYBRID to "1588324922")
+    /** Tab ids per sheet, so renaming a tab doesn't break the app. Names are the fallback. */
+    private val GIDS = mapOf(
+        SHEET_ID to mapOf(SystemType.ONGRID to "0", SystemType.HYBRID to "1"),
+        OLD_SHEET_ID to mapOf(SystemType.ONGRID to "118618691", SystemType.HYBRID to "1588324922"),
+    )
 
     @Volatile var packages: List<SystemPackage> = emptyList()
         private set
@@ -38,11 +47,11 @@ object Catalog {
     fun of(type: SystemType) = packages.filter { it.type == type }
     fun byId(id: String?) = packages.firstOrNull { it.id == id }
 
-    private fun byGid(gid: String) =
-        "https://docs.google.com/spreadsheets/d/$SHEET_ID/export?format=csv&gid=$gid"
+    private fun byGid(sheet: String, gid: String) =
+        "https://docs.google.com/spreadsheets/d/$sheet/export?format=csv&gid=$gid"
 
-    private fun byName(tab: String) =
-        "https://docs.google.com/spreadsheets/d/$SHEET_ID/gviz/tq?tqx=out:csv&headers=0&sheet=" +
+    private fun byName(sheet: String, tab: String) =
+        "https://docs.google.com/spreadsheets/d/$sheet/gviz/tq?tqx=out:csv&headers=0&sheet=" +
             URLEncoder.encode(tab, "UTF-8").replace("+", "%20")
 
     private fun file(c: Context, name: String) = File(c.filesDir, "sheet_$name.csv")
@@ -65,16 +74,20 @@ object Catalog {
 
     /** Downloads fresh prices. Returns true on success; keeps the old copy on failure. */
     suspend fun refresh(c: Context): Boolean = withContext(Dispatchers.IO) {
-        try {
+        refreshFrom(c, SHEET_ID) || refreshFrom(c, OLD_SHEET_ID)
+    }
+
+    private fun refreshFrom(c: Context, sheet: String): Boolean {
+        return try {
             val texts = mutableMapOf<SystemType, String>()
             val list = mutableListOf<SystemPackage>()
             for (t in SystemType.entries) {
-                val csv = tabCsv(t)
+                val csv = tabCsv(sheet, t)
                 val parsed = parseTab(t, csv)
                 if (parsed.isNotEmpty()) { texts[t] = csv; list += parsed }
             }
             if (list.none { it.type == SystemType.ONGRID }) error("no on-grid systems")
-            val sets = try { download(byName(SETTINGS_TAB)) } catch (_: Exception) { "" }
+            val sets = try { download(byName(sheet, SETTINGS_TAB)) } catch (_: Exception) { "" }
             packages = list
             settings = parseSettings(sets)
             texts.forEach { (t, csv) -> file(c, t.name).writeText(csv) }
@@ -87,16 +100,16 @@ object Catalog {
         }
     }
 
-    private fun tabCsv(t: SystemType): String {
-        val gid = GIDS[t]
+    private fun tabCsv(sheet: String, t: SystemType): String {
+        val gid = GIDS[sheet]?.get(t)
         if (gid != null) {
             try {
-                val csv = download(byGid(gid))
+                val csv = download(byGid(sheet, gid))
                 if (parseTab(t, csv).isNotEmpty()) return csv
             } catch (_: Exception) {
             }
         }
-        return download(byName(t.tab))
+        return download(byName(sheet, t.tab))
     }
 
     private fun download(address: String): String {

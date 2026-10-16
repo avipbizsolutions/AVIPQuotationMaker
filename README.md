@@ -32,17 +32,18 @@ https://github.com/avipbizsolutions/AVIPQuotationMaker/releases/latest/download/
    the office. Visits are saved as you go; unfinished ones show as **Draft** on the home screen.
 
 ## Prices come from the Google Sheet
-The app reads only the customer-price tabs of the sheet (must be *Anyone with the link → Viewer*):
+The app reads **AVIP Customer Prices (App)** (`1g4CSk_r3YaaBZ9RO4vGIO8n14GrVrKaejB35HNPCjXc`), which must be
+*Anyone with the link → Viewer*. It holds only what customers may see:
 
 | Tab | Used for |
 |---|---|
-| **Ongrid Project** | One column per on-grid system. Rows are read by their names, so keep labels such as *Panel Brand*, *Inverter Brand and Specification*, *DCR Panel Wattage* + *No. of Panels*, *Non-DCR Panel Wattage* + *No. of Panels*, *Total Panel Wattage*, *Price (GST Included)*, *Maximum Discount*. New rows you add appear on the quotation automatically. |
-| **Hybrid Project** | Same layout for hybrid systems (*Hybrid Inverter*, *Lithium Battery*, *Battery Warranty* …). |
-| **App Settings** *(optional)* | Key / Value overrides — see below. |
+| **Ongrid Project** | Pulled live from the *Updated Costing Sheet* with IMPORTRANGE — do not type here. One column per on-grid system; rows are read by their names (*Panel Brand*, *DCR Panel Wattage* + *No. of Panels*, *Price (GST Included)*, *Maximum Discount* …). |
+| **Hybrid Project** | Same, for hybrid systems. |
+| **App Settings** | Key / Value settings — see below. |
 
-The costing tabs are never read by the app. Add a system by adding a column; change a price
-by editing the cell. Phones pick up changes on next launch (or the refresh button on home).
-The app keeps the last copy, so it works without signal at site.
+The team keeps editing prices in the *Updated Costing Sheet* as before; that sheet can (and should)
+stay **private**, because it holds cost and margin. Phones pick up price changes on next launch
+(or the refresh button on home) and keep the last copy, so the app works without signal at site.
 
 ### App Settings keys (all optional — the app has sensible defaults)
 `company_name`, `brand_name`, `tagline`, `phone`, `whatsapp`, `email`, `website`, `gstin`,
