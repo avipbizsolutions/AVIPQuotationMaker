@@ -40,13 +40,34 @@ class SketchActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(8), dp(10), dp(10), dp(10))
             addView(text("Site sketch", 14f, Ui.TEXT, bold = true) { gravity = Gravity.CENTER })
-            addView(text("Roof, tank, stairs, shade, panel rows", 11f, Ui.MUTED) { gravity = Gravity.CENTER }, lp().margins(context, t = 2, b = 12))
+            addView(text("Roof, tank, stairs, shade, panel rows", 11f, Ui.MUTED) { gravity = Gravity.CENTER }, lp().margins(context, t = 2, b = 10))
+            val modes = listOf(DrawPad.Tool.FREE to "Free hand", DrawPad.Tool.LINE to "Line", DrawPad.Tool.RECT to "Rectangle")
+            val modeViews = mutableListOf<Pair<DrawPad.Tool, android.widget.TextView>>()
+            fun paintModes() = modeViews.forEach { (t, tv) ->
+                val on = pad.tool == t
+                tv.background = if (on) rounded(Ui.BRAND, dpf(12f)) else rounded(Color.WHITE, dpf(12f), Ui.LINE, dp(1))
+                tv.setTextColor(if (on) Color.WHITE else Ui.TEXT)
+            }
+            modes.forEach { (t, label) ->
+                val tv = text(label, 14f, Ui.TEXT, bold = true) {
+                    gravity = Gravity.CENTER
+                    setPadding(dp(8), dp(10), dp(8), dp(10))
+                    setOnClickListener { pad.tool = t; paintModes() }
+                }
+                modeViews += t to tv
+                addView(tv, lp().margins(context, b = 6))
+            }
+            paintModes()
+            addView(View(context), lp(MATCH, dp(8)))
             addView(tool("Undo", R.drawable.ic_back, Ui.BRAND) { pad.undo() })
             addView(tool("Clear", R.drawable.ic_delete, Ui.DANGER) { pad.clear() })
             addView(View(context), lp(MATCH, 0, 1f))
             addView(pillButton("Save", iconRes = R.drawable.ic_check, heightDp = 46) { done() }, lp())
         }
-        root.addView(tools, lp(dp(150), MATCH))
+        root.addView(android.widget.ScrollView(this).apply {
+            isFillViewport = true
+            addView(tools, android.widget.FrameLayout.LayoutParams(MATCH, WRAP))
+        }, lp(dp(150), MATCH))
         setContentView(root)
     }
 

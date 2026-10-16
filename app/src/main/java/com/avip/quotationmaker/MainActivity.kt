@@ -125,11 +125,15 @@ class MainActivity : AppCompatActivity() {
         background = gradient(0f, Ui.BRAND_DARK, Ui.BRAND)
         setPadding(dp(18), dp(14), dp(10), dp(48))
         addView(horizontal {
-            addView(ImageView(context).apply { setImageResource(R.drawable.ic_logo) }, lp(dp(44), dp(44)))
-            addView(vertical {
-                addView(text("AVIP Quotation Maker", 18f, Color.WHITE, bold = true))
-                addView(text(Catalog.settings["brand_name"] + " · " + Catalog.settings["company_name"], 11.5f, 0xCCFFFFFF.toInt()) { maxLines = 1 })
-            }, lp(0, WRAP, 1f).margins(context, l = 10))
+            addView(android.widget.FrameLayout(context).apply {
+                background = rounded(Color.WHITE, dpf(12f))
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+                addView(ImageView(context).apply {
+                    setImageResource(R.drawable.avip_solar_logo)
+                    adjustViewBounds = true
+                }, android.widget.FrameLayout.LayoutParams(dp(118), WRAP))
+            }, lp(WRAP, WRAP))
+            addView(text("Quotation Maker", 14f, Color.WHITE, bold = true) { maxLines = 1 }, lp(0, WRAP, 1f).margins(context, l = 10))
             addView(barButton(R.drawable.ic_refresh) { refresh() })
             addView(barButton(R.drawable.ic_person) { startActivity(Intent(context, ProfileActivity::class.java)) })
         })

@@ -111,7 +111,7 @@ class VisitActivity : AppCompatActivity() {
     private val notifPerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     private val locationPerm = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
-        if (r.values.any { it }) captureLocation() else toast("Location permission is needed to tag the site")
+        if (r.values.any { it }) captureLocation(silentPerm) else toast("Location permission is needed to tag the site")
     }
 
     // ---------- lifecycle ----------
@@ -161,6 +161,21 @@ class VisitActivity : AppCompatActivity() {
             override fun handleOnBackPressed() { if (step > 0 && !v.isQuoted) go(step - 1) else leave() }
         })
         render()
+        // tag the site automatically: the executive is standing at the customer's home
+        if (!v.hasLocation && !v.isQuoted) autoLocate()
+    }
+
+    private var locating = false
+    private var silentPerm = false
+
+    private fun autoLocate() {
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (granted) captureLocation(silent = true)
+        else {
+            silentPerm = true
+            locationPerm.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -205,7 +220,14 @@ class VisitActivity : AppCompatActivity() {
         }
         if (step == 2 && v.pkg == null) { toast("Pick a system first"); return }
         if (step == 2 && (v.pkg?.price ?: 0.0) <= 0) { toast("Enter the price of the custom system"); return }
-        if (step == 4) { makePdfs(); return }
+        if (step == 4) {
+            if (v.leadStatus == "Open" && v.followUpAt <= 0) {
+                toast("Set the next follow-up date before creating the quotation")
+                followUpCard?.let { c -> scroll.post { scroll.smoothScrollTo(0, c.top - dp(12)) } }
+                return
+            }
+            makePdfs(); return
+        }
         go(step + 1)
     }
 
@@ -340,10 +362,14 @@ class VisitActivity : AppCompatActivity() {
         // location
         body.addView(card {
             addView(horizontal {
-                addView(badge(R.drawable.ic_location, if (v.hasLocation) Ui.BRAND else Ui.MUTED, 42))
+                addView(badge(R.drawable.ic_location, if (v.hasLocation) Ui.BRAND else if (locating) Ui.SUN else Ui.MUTED, 42))
                 addView(vertical {
-                    addView(text(if (v.hasLocation) "Site location saved" else "Tag site location", 15f, Ui.TEXT, bold = true))
-                    addView(text(if (v.hasLocation) String.format(java.util.Locale.US, "%.6f, %.6f", v.lat, v.lng) else "Stand on the roof and tap Capture", 12.5f, Ui.MUTED))
+                    addView(text(when { v.hasLocation -> "Site location tagged"; locating -> "Getting location…"; else -> "Site location not tagged" }, 15f, Ui.TEXT, bold = true))
+                    addView(text(when {
+                        v.hasLocation -> String.format(java.util.Locale.US, "%.6f, %.6f", v.lat, v.lng)
+                        locating -> "Captured automatically — keep Location (GPS) on"
+                        else -> "Turn on Location, then tap Capture"
+                    }, 12.5f, Ui.MUTED))
                 }, lp(0, WRAP, 1f).margins(context, l = 12))
             })
             addView(horizontal {
@@ -357,9 +383,16 @@ class VisitActivity : AppCompatActivity() {
         body.addView(tiles(
             listOf("RCC Roof" to R.drawable.ic_home, "Tin Shed" to R.drawable.cat_structure, "Asbestos" to R.drawable.ic_grid, "Ground Mount" to R.drawable.ic_sun),
             v.roofType, columns = 4,
-        ) { v.roofType = it })
-        body.addView(text("Building height", 13f, Ui.MUTED, bold = true), lp().margins(this, t = 8, b = 6))
-        body.addView(chips(listOf("Ground", "G+1", "G+2", "G+3", "G+4 or more"), v.floors) { v.floors = it })
+        ) { picked ->
+            val wasGround = v.roofType == "Ground Mount"
+            v.roofType = picked
+            if (picked == "Ground Mount") v.floors = ""
+            if (wasGround != (picked == "Ground Mount")) { save(); render() }
+        })
+        if (v.roofType != "Ground Mount") {
+            body.addView(text("Building height", 13f, Ui.MUTED, bold = true), lp().margins(this, t = 8, b = 6))
+            body.addView(chips(listOf("Ground", "G+1", "G+2", "G+3", "G+4 or more"), v.floors) { v.floors = it })
+        }
 
         val areaNote = text("", 13f, Ui.BRAND_DARK, bold = true)
         fun updateArea() {
@@ -427,6 +460,12 @@ class VisitActivity : AppCompatActivity() {
         body.addView(tiles(listOf("Magnelis" to R.drawable.cat_structure, "Normal GI" to R.drawable.ic_ruler), v.structureType, columns = 2) {
             v.structureType = it; save(); render()
         })
+        if (v.structureType == "Magnelis") {
+            body.addView(text("Module mounting", 13f, Ui.MUTED, bold = true), lp().margins(this, t = 4, b = 6))
+            body.addView(tiles(listOf("2P × 3" to R.drawable.ic_grid, "2P × 4" to R.drawable.ic_grid, "2P × 5" to R.drawable.ic_grid),
+                v.mountingLayout, columns = 3) { v.mountingLayout = it; save() })
+            body.addView(text("2 panels in portrait per column × 3, 4 or 5 columns (6, 8 or 10 panels per table)", 11.5f, Ui.MUTED), lp().margins(this, t = 2))
+        }
         if (v.isGi) body.addView(card(12) {
             addView(text("GI structure dimensions", 13f, Ui.MUTED, bold = true), lp().margins(context, b = 8))
             addView(horizontal {
@@ -973,8 +1012,12 @@ class VisitActivity : AppCompatActivity() {
 
     private val dayFmt = java.text.SimpleDateFormat("EEE, dd MMM yyyy", java.util.Locale.ENGLISH)
 
+    private var followUpCard: View? = null
+
     private fun followUpSection() {
-        body.addView(sectionTitle("Follow-up", "Reminder rings at 10:00 AM on the chosen day"), lp().margins(this, t = 24, b = 10))
+        val title = sectionTitle("Follow-up", "Required while the lead is Open · reminder at 10:00 AM")
+        followUpCard = title
+        body.addView(title, lp().margins(this, t = 24, b = 10))
         body.addView(card {
             addView(text("Lead status", 13f, Ui.MUTED, bold = true), lp().margins(context, b = 6))
             addView(chips(listOf("Open", "Converted", "Lost"), v.leadStatus, Ui.BLUE) { st ->
@@ -987,7 +1030,7 @@ class VisitActivity : AppCompatActivity() {
                     addView(badge(R.drawable.ic_history, if (v.followUpAt > 0) Ui.BRAND else Ui.MUTED, 42))
                     addView(vertical {
                         addView(text(if (v.followUpAt > 0) dayFmt.format(java.util.Date(v.followUpAt)) else "No follow-up date", 15f, Ui.TEXT, bold = true))
-                        addView(text(if (v.followUpAt > 0) "Call reminder at 10:00 AM" else "Pick the next date to call", 12f, Ui.MUTED))
+                        addView(text(if (v.followUpAt > 0) "Call reminder at 10:00 AM" else "Required — tap to pick the next call date", 12f, if (v.followUpAt > 0) Ui.MUTED else Ui.DANGER))
                     }, lp(0, WRAP, 1f).margins(context, l = 10))
                     addView(text(if (v.followUpAt > 0) "Change" else "Set date", 14f, Ui.BRAND, bold = true) {
                         setPadding(dp(8), dp(8), dp(4), dp(8))
@@ -1062,25 +1105,28 @@ class VisitActivity : AppCompatActivity() {
             nextText.setOnClickListener { pickFollowUpDate { d -> next = Reminders.tenAm(d); nextText.text = "Next follow-up: ${dayFmt.format(java.util.Date(next))}, 10 AM" } }
             addView(nextText)
         }
-        AlertDialog.Builder(this).setTitle("Log follow-up call").setView(box)
-            .setPositiveButton("Save") { _, _ ->
-                if (outcome.isBlank()) { toast("Pick the call result"); return@setPositiveButton }
-                val entry = FollowUp(System.currentTimeMillis(), outcome, note, next)
+        val dialog = AlertDialog.Builder(this).setTitle("Log follow-up call").setView(box)
+            .setPositiveButton("Save", null)
+            .setNegativeButton("Cancel", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (outcome.isBlank()) { toast("Pick the call result"); return@setOnClickListener }
+                val staysOpen = outcome != "Converted" && outcome != "Not interested"
+                if (staysOpen && next <= 0) { toast("Pick the next follow-up date"); return@setOnClickListener }
+                val entry = FollowUp(System.currentTimeMillis(), outcome, note, if (staysOpen) next else 0L)
                 v.followUps += entry
-                when (outcome) {
-                    "Converted" -> v.leadStatus = "Converted"
-                    "Not interested" -> v.leadStatus = "Lost"
-                    else -> v.leadStatus = "Open"
-                }
-                v.followUpAt = if (v.leadStatus == "Open") next else 0L
-                if (next > 0) v.followUpNote = ""
+                v.leadStatus = when (outcome) { "Converted" -> "Converted"; "Not interested" -> "Lost"; else -> "Open" }
+                v.followUpAt = if (staysOpen) next else 0L
+                v.followUpNote = ""
                 save()
                 Reminders.schedule(this, v)
                 Remote.queue(this, Remote.followUpEntry(this, v, entry))
                 syncVisit()
+                dialog.dismiss()
                 render()
             }
-            .setNegativeButton("Cancel", null).show()
+        }
+        dialog.show()
     }
 
     private fun customerMessage(): String {
@@ -1123,22 +1169,26 @@ class VisitActivity : AppCompatActivity() {
     private fun askLocation() {
         val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        silentPerm = false
         if (fine || coarse) captureLocation()
         else locationPerm.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     }
 
     @SuppressLint("MissingPermission")
-    private fun captureLocation() {
+    private fun captureLocation(silent: Boolean = false) {
+        if (locating) return
         val lm = getSystemService(LOCATION_SERVICE) as LocationManager
         val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).filter {
             try { lm.isProviderEnabled(it) } catch (_: Exception) { false }
         }
         if (providers.isEmpty()) {
-            toast("Turn on Location (GPS) in phone settings")
-            try { startActivity(Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS)) } catch (_: Exception) {}
+            toast("Turn on Location (GPS) to tag the site")
+            if (!silent) try { startActivity(Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS)) } catch (_: Exception) {}
             return
         }
-        val wait = AlertDialog.Builder(this).setMessage("Getting GPS fix…\nStand in the open for best accuracy.").setCancelable(true).show()
+        locating = true
+        if (step == 1) render()
+        val wait = if (silent) null else AlertDialog.Builder(this).setMessage("Getting GPS fix…\nStand in the open for best accuracy.").setCancelable(true).show()
         var done = false
         val handler = Handler(Looper.getMainLooper())
         lateinit var listener: LocationListener
@@ -1146,11 +1196,18 @@ class VisitActivity : AppCompatActivity() {
             if (done) return
             done = true
             try { lm.removeUpdates(listener) } catch (_: Exception) {}
-            if (wait.isShowing) wait.dismiss()
-            if (loc == null) { toast("Couldn't get location. Try again outdoors."); return }
+            locating = false
+            if (wait?.isShowing == true) wait?.dismiss()
+            if (isFinishing || isDestroyed) return
+            if (loc == null) {
+                if (!silent) toast("Couldn't get location. Try again outdoors.")
+                if (step == 1) render()
+                return
+            }
             v.lat = loc.latitude; v.lng = loc.longitude
-            save(); render()
-            toast("Location saved (±${loc.accuracy.roundToInt()} m)")
+            save()
+            if (step == 1) render()
+            toast((if (silent) "Site location tagged" else "Location saved") + " (±${loc.accuracy.roundToInt()} m)")
         }
         listener = object : LocationListener {
             override fun onLocationChanged(location: Location) { if (location.accuracy <= 50f || location.provider == LocationManager.NETWORK_PROVIDER) deliver(location) }
@@ -1171,7 +1228,7 @@ class VisitActivity : AppCompatActivity() {
                 deliver(any)
             }
         }, 25_000L)
-        wait.setOnCancelListener { done = true; try { lm.removeUpdates(listener) } catch (_: Exception) {} }
+        wait?.setOnCancelListener { done = true; locating = false; try { lm.removeUpdates(listener) } catch (_: Exception) {} }
     }
 
     // ---------- photos ----------

@@ -14,11 +14,18 @@ import android.view.View
 import java.io.File
 
 /**
- * Finger drawing area. Used for the customer's signature and for the rough site
- * sketch (with N / E / S / W marks, like the paper form).
+ * Finger drawing area. Used for the customer's signature and for the site sketch
+ * (with N / E / S / W marks, like the paper form). The sketch can draw free hand,
+ * straight lines or rectangles.
  */
 @SuppressLint("ViewConstructor")
 class DrawPad(context: Context, private val compass: Boolean) : View(context) {
+
+    enum class Tool { FREE, LINE, RECT }
+
+    private class Mark(val tool: Tool, val path: Path, var x0: Float, var y0: Float, var x1: Float, var y1: Float)
+
+    var tool = Tool.FREE
 
     private val ink = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = if (compass) Ui.BLUE else 0xFF0B2A6B.toInt()
@@ -33,16 +40,16 @@ class DrawPad(context: Context, private val compass: Boolean) : View(context) {
     private val dash = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFFDCE3DE.toInt(); strokeWidth = context.dpf(1f); style = Paint.Style.STROKE
     }
-    private val paths = mutableListOf<Path>()
-    private var current: Path? = null
+    private val marks = mutableListOf<Mark>()
+    private var current: Mark? = null
     private var base: Bitmap? = null
     var onDrawn: (() -> Unit)? = null
 
-    val isEmpty get() = paths.isEmpty() && base == null
+    val isEmpty get() = marks.isEmpty() && base == null
 
-    fun clear() { paths.clear(); base = null; invalidate(); onDrawn?.invoke() }
+    fun clear() { marks.clear(); base = null; invalidate(); onDrawn?.invoke() }
 
-    fun undo() { if (paths.isNotEmpty()) { paths.removeAt(paths.size - 1); invalidate(); onDrawn?.invoke() } }
+    fun undo() { if (marks.isNotEmpty()) { marks.removeAt(marks.size - 1); invalidate(); onDrawn?.invoke() } }
 
     /** Shows an earlier saved drawing so it can be added to. */
     fun loadFrom(file: File) {
@@ -50,11 +57,19 @@ class DrawPad(context: Context, private val compass: Boolean) : View(context) {
         invalidate()
     }
 
+    private fun drawMark(c: Canvas, m: Mark) {
+        when (m.tool) {
+            Tool.FREE -> c.drawPath(m.path, ink)
+            Tool.LINE -> c.drawLine(m.x0, m.y0, m.x1, m.y1, ink)
+            Tool.RECT -> c.drawRect(minOf(m.x0, m.x1), minOf(m.y0, m.y1), maxOf(m.x0, m.x1), maxOf(m.y0, m.y1), ink)
+        }
+    }
+
     override fun onDraw(canvas: Canvas) {
         canvas.drawColor(Color.WHITE)
         base?.let { canvas.drawBitmap(it, null, RectF(0f, 0f, width.toFloat(), height.toFloat()), null) }
         if (base == null) drawGuides(canvas, guide, dash)
-        paths.forEach { canvas.drawPath(it, ink) }
+        marks.forEach { drawMark(canvas, it) }
     }
 
     private fun drawGuides(c: Canvas, text: Paint, line: Paint) {
@@ -79,12 +94,16 @@ class DrawPad(context: Context, private val compass: Boolean) : View(context) {
         parent?.requestDisallowInterceptTouchEvent(true) // don't scroll the page while drawing
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                current = Path().apply { moveTo(e.x, e.y); lineTo(e.x + 0.1f, e.y) }
-                paths += current!!
+                val m = Mark(tool, Path().apply { moveTo(e.x, e.y); lineTo(e.x + 0.1f, e.y) }, e.x, e.y, e.x, e.y)
+                current = m
+                marks += m
             }
-            MotionEvent.ACTION_MOVE -> {
-                for (i in 0 until e.historySize) current?.lineTo(e.getHistoricalX(i), e.getHistoricalY(i))
-                current?.lineTo(e.x, e.y)
+            MotionEvent.ACTION_MOVE -> current?.let { m ->
+                if (m.tool == Tool.FREE) {
+                    for (i in 0 until e.historySize) m.path.lineTo(e.getHistoricalX(i), e.getHistoricalY(i))
+                    m.path.lineTo(e.x, e.y)
+                }
+                m.x1 = e.x; m.y1 = e.y
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 current = null
@@ -104,7 +123,7 @@ class DrawPad(context: Context, private val compass: Boolean) : View(context) {
         c.drawColor(Color.WHITE)
         base?.let { c.drawBitmap(it, null, RectF(0f, 0f, width.toFloat(), height.toFloat()), null) }
         if (base == null && compass) drawGuides(c, Paint(guide).apply { color = 0xFF66746B.toInt() }, dash)
-        paths.forEach { c.drawPath(it, ink) }
+        marks.forEach { drawMark(c, it) }
         file.parentFile?.mkdirs()
         file.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
         return true

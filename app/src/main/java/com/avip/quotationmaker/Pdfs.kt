@@ -265,7 +265,8 @@ class Pdfs(private val context: Context) {
         if (p.type == SystemType.HYBRID) rows += R("MCB Changeover", "Grid / backup switching", "1 no", "")
         p.v("acdb").takeIf { it.isNotBlank() }?.let { rows += R("ACDB + DCDB", "$it · with protection", "1 set", "") }
         val structureSpec = when {
-            v.structureType == "Magnelis" -> "Magnelis (zinc-magnesium coated) · " + p.structure.ifBlank { "APL Apollo" }
+            v.structureType == "Magnelis" -> "Magnelis (zinc-magnesium coated) · " + p.structure.ifBlank { "APL Apollo" } +
+                (if (v.mountingLayout.isNotBlank()) " · ${v.mountingLayout} module mounting" else "")
             v.isGi -> "Hot-dip GI · " + p.structure.ifBlank { "APL Apollo" }
             else -> p.structure
         }
@@ -510,7 +511,10 @@ class Pdfs(private val context: Context) {
         // structure
         heading("Proposed structure design")
         if (v.isGi) structureTable(v)
-        else grid(listOf("Structure type" to v.structureType.ifBlank { "Not selected" }, "Dimensions" to "Standard (Magnelis)"))
+        else grid(listOf(
+            "Structure type" to v.structureType.ifBlank { "Not selected" },
+            "Module mounting" to (if (v.structureType == "Magnelis") v.mountingLayout.ifBlank { "Not selected" } else "—"),
+        ))
 
         val follow = listOf(
             "Lead status" to v.leadStatus,
@@ -611,17 +615,18 @@ class Pdfs(private val context: Context) {
 
     private fun letterhead(title: String, lines: List<String>, under: String) {
         val headTop = y
-        val logo = drawableBitmap(R.drawable.ic_logo, 180)
-        var textLeft = margin
-        if (logo != null) {
-            canvas.drawBitmap(logo, null, RectF(margin, headTop, margin + 58f, headTop + 58f), Paint(Paint.FILTER_BITMAP_FLAG))
-            textLeft = margin + 70f
-        }
+        val logo = BitmapFactory.decodeResource(context.resources, R.drawable.avip_solar_logo)
+        val textLeft = margin
         val titleW = 160f
         val headW = right - titleW - textLeft - 10f
-        var hy = headTop + 15f
-        hy = wrapText(s["brand_name"] + "  ·  " + s["company_name"], textLeft, hy, headW, paint(13.5f, brand, true), 16f)
-        hy = wrapText(s["tagline"], textLeft, hy, headW, paint(8f, muted), 10.5f)
+        var hy = headTop
+        if (logo != null) {
+            val lh = 44f
+            val lw = lh * logo.width / logo.height
+            canvas.drawBitmap(logo, null, RectF(margin, headTop, margin + lw, headTop + lh), Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+            hy = headTop + lh + 12f
+        } else hy += 15f
+        hy = wrapText(s["company_name"], textLeft, hy, headW, paint(10.5f, ink, true), 12.5f)
         hy = wrapText(s["address"], textLeft, hy, headW, paint(8f, ink), 10.5f)
         hy = wrapText(listOf(s["phone"], s["email"], s["website"]).filter { it.isNotBlank() }.joinToString("  ·  "), textLeft, hy, headW, paint(8f, ink), 10.5f)
         hy = wrapText("GSTIN: ${s["gstin"]}", textLeft, hy, headW, paint(8f, ink, true), 10.5f)

@@ -168,7 +168,7 @@ object Remote {
             .put("pan", if (v.isLoan) v.pan else "").put("aadhaarLast4", if (v.isLoan) v.aadhaar.filter { it.isDigit() }.takeLast(4) else "")
             .put("roof", listOf(v.roofType, v.floors).filter { it.isNotBlank() }.joinToString(", "))
             .put("roofSize", if (v.roofLength.isNotBlank() && v.roofWidth.isNotBlank()) "${v.roofLength} x ${v.roofWidth} ft" else "")
-            .put("shading", v.shading).put("structure", v.structureType)
+            .put("shading", v.shading).put("structure", listOf(v.structureType, if (v.structureType == "Magnelis") v.mountingLayout else "").filter { it.isNotBlank() }.joinToString(" "))
             .put("location", if (v.hasLocation) String.format(Locale.US, "%.6f,%.6f", v.lat, v.lng) else "")
             .put("systemType", p?.type?.label ?: "").put("system", (p?.name ?: "") + if (p?.custom == true) " (custom)" else "")
             .put("kwp", p?.kwp ?: 0.0).put("price", p?.price ?: 0.0).put("discount", v.discount)

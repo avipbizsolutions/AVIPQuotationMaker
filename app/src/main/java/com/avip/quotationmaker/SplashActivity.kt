@@ -76,7 +76,15 @@ class SplashActivity : AppCompatActivity() {
         }
         val brandBlock = vertical {
             gravity = Gravity.CENTER_HORIZONTAL
-            addView(ImageView(context).apply { setImageResource(R.drawable.ic_logo) }, lp(dp(120), dp(120)))
+            addView(android.widget.FrameLayout(context).apply {
+                background = rounded(Color.WHITE, dpf(22f))
+                elevation = dpf(6f)
+                setPadding(dp(22), dp(18), dp(22), dp(18))
+                addView(ImageView(context).apply {
+                    setImageResource(R.drawable.avip_solar_logo)
+                    adjustViewBounds = true
+                }, android.widget.FrameLayout.LayoutParams(dp(230), WRAP))
+            }, lp(WRAP, WRAP))
             addView(text("AVIP Quotation Maker", 26f, Color.WHITE, bold = true) { gravity = Gravity.CENTER }, lp(WRAP, WRAP).margins(context, t = 18))
             addView(text("Site visit to quotation, right at the customer's home", 14f, 0xDDFFFFFF.toInt()) { gravity = Gravity.CENTER }, lp(WRAP, WRAP).margins(context, t = 6))
             addView(text("by AVIP Business Solutions LLP", 12f, Ui.SUN, bold = true) { gravity = Gravity.CENTER }, lp(WRAP, WRAP).margins(context, t = 4))
