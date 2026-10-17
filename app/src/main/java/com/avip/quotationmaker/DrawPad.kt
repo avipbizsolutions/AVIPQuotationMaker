@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -40,6 +41,16 @@ class DrawPad(context: Context, private val compass: Boolean) : View(context) {
     private val dash = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFFDCE3DE.toInt(); strokeWidth = context.dpf(1f); style = Paint.Style.STROKE
     }
+    // graph-paper background for the site sketch: small dotted squares, a darker line every 5
+    private val gridMinor = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFD5DFD9.toInt(); strokeWidth = context.dpf(1f); style = Paint.Style.STROKE
+        pathEffect = DashPathEffect(floatArrayOf(context.dpf(1.5f), context.dpf(3f)), 0f)
+    }
+    private val gridMajor = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFB7C6BD.toInt(); strokeWidth = context.dpf(1.2f); style = Paint.Style.STROKE
+        pathEffect = DashPathEffect(floatArrayOf(context.dpf(4f), context.dpf(3f)), 0f)
+    }
+    private val cell get() = context.dpf(20f)
     private val marks = mutableListOf<Mark>()
     private var current: Mark? = null
     private var base: Bitmap? = null
@@ -72,10 +83,33 @@ class DrawPad(context: Context, private val compass: Boolean) : View(context) {
         marks.forEach { drawMark(canvas, it) }
     }
 
+    private fun drawGrid(c: Canvas) {
+        val w = width.toFloat(); val h = height.toFloat()
+        val step = cell
+        // start the grid from the centre so it looks even on every screen
+        val cx = w / 2; val cy = h / 2
+        var i = 0
+        var x = cx
+        while (x >= 0) { c.drawLine(x, 0f, x, h, if (i % 5 == 0) gridMajor else gridMinor); x -= step; i++ }
+        i = 1; x = cx + step
+        while (x <= w) { c.drawLine(x, 0f, x, h, if (i % 5 == 0) gridMajor else gridMinor); x += step; i++ }
+        i = 0
+        var y = cy
+        while (y >= 0) { c.drawLine(0f, y, w, y, if (i % 5 == 0) gridMajor else gridMinor); y -= step; i++ }
+        i = 1; y = cy + step
+        while (y <= h) { c.drawLine(0f, y, w, y, if (i % 5 == 0) gridMajor else gridMinor); y += step; i++ }
+    }
+
     private fun drawGuides(c: Canvas, text: Paint, line: Paint) {
         val w = width.toFloat(); val h = height.toFloat()
         if (compass) {
+            drawGrid(c)
+            // white patches so N / E / S / W stay readable over the grid
+            val bg = Paint().apply { color = Color.WHITE }
             val pad = context.dpf(16f)
+            val r = text.textSize * 0.75f
+            c.drawCircle(w / 2, pad, r, bg); c.drawCircle(w / 2, h - pad / 2 - text.textSize * 0.35f, r, bg)
+            c.drawCircle(pad, h / 2, r, bg); c.drawCircle(w - pad, h / 2, r, bg)
             c.drawText("N", w / 2, pad + text.textSize * 0.4f, text)
             c.drawText("S", w / 2, h - pad / 2, text)
             c.drawText("W", pad, h / 2 + text.textSize / 3, text)

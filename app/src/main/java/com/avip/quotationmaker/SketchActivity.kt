@@ -51,7 +51,7 @@ class SketchActivity : AppCompatActivity() {
             modes.forEach { (t, label) ->
                 val tv = text(label, 14f, Ui.TEXT, bold = true) {
                     gravity = Gravity.CENTER
-                    setPadding(dp(8), dp(10), dp(8), dp(10))
+                    setPadding(dp(8), dp(8), dp(8), dp(8))
                     setOnClickListener { pad.tool = t; paintModes() }
                 }
                 modeViews += t to tv
@@ -69,6 +69,11 @@ class SketchActivity : AppCompatActivity() {
             addView(tools, android.widget.FrameLayout.LayoutParams(MATCH, WRAP))
         }, lp(dp(150), MATCH))
         setContentView(root)
+        // full screen: more room to draw, and the tool column is not pushed under the status bar
+        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
+            hide(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+            systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
     }
 
     private fun tool(label: String, res: Int, color: Int, onClick: () -> Unit): View = horizontal {
