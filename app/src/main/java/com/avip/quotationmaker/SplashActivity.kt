@@ -85,7 +85,7 @@ class SplashActivity : AppCompatActivity() {
                     adjustViewBounds = true
                 }, android.widget.FrameLayout.LayoutParams(dp(230), WRAP))
             }, lp(WRAP, WRAP))
-            addView(text("AVIP Quotation Maker", 26f, Color.WHITE, bold = true) { gravity = Gravity.CENTER }, lp(WRAP, WRAP).margins(context, t = 18))
+            addView(text("AVIP Surya Sales", 26f, Color.WHITE, bold = true) { gravity = Gravity.CENTER }, lp(WRAP, WRAP).margins(context, t = 18))
             addView(text("Site visit to quotation, right at the customer's home", 14f, 0xDDFFFFFF.toInt()) { gravity = Gravity.CENTER }, lp(WRAP, WRAP).margins(context, t = 6))
             addView(text("by AVIP Business Solutions LLP", 12f, Ui.SUN, bold = true) { gravity = Gravity.CENTER }, lp(WRAP, WRAP).margins(context, t = 4))
         }
@@ -181,7 +181,7 @@ class SplashActivity : AppCompatActivity() {
     private fun askInstallPermission(release: ReleaseInfo) {
         AlertDialog.Builder(this)
             .setTitle("New version available")
-            .setMessage("Version ${release.versionName} is ready. Allow AVIP Quotation Maker to install its own updates? This is needed only once.")
+            .setMessage("Version ${release.versionName} is ready. Allow AVIP Surya Sales to install its own updates? This is needed only once.")
             .setCancelable(false)
             .setPositiveButton("Allow") { _, _ ->
                 unknownSourcesLauncher.launch(

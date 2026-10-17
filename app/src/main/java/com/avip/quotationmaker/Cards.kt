@@ -28,7 +28,7 @@ fun Activity.visitRow(v: Visit, onChanged: () -> Unit = {}): View = card(14) {
         }, lp(0, WRAP, 1f).margins(context, l = 12))
         addView(vertical {
             gravity = Gravity.END
-            if (p != null) addView(text(Fmt.inr(v.finalPrice), 15f, Ui.BRAND_DARK, bold = true))
+            if (p != null) addView(text(Fmt.inr(v.finalPrice), 15f, Ui.BRAND_DARK, bold = true) { setSingleLine() }, lp(WRAP, WRAP))
             val t = when {
                 !v.isQuoted -> tag("DRAFT", Ui.SUN, Ui.TEXT)
                 v.leadStatus == "Converted" -> tag("CONVERTED", 0xFF2E7D32.toInt())
@@ -122,9 +122,9 @@ fun Activity.packageCard(p: SystemPackage, selected: Boolean, recommended: Boole
         val sub = Money.subsidy(p, true)
         if (sub > 0) addView(vertical {
             gravity = Gravity.END
-            addView(text("Subsidy up to", 11.5f, Ui.MUTED))
-            addView(text(Fmt.inr(sub), 16f, 0xFF2E7D32.toInt(), bold = true))
-        })
+            addView(text("Subsidy up to", 11.5f, Ui.MUTED) { setSingleLine() }, lp(WRAP, WRAP))
+            addView(text(Fmt.inr(sub), 16f, 0xFF2E7D32.toInt(), bold = true) { setSingleLine() }, lp(WRAP, WRAP))
+        }, lp(WRAP, WRAP))
     })
     outer.addView(body)
     return outer

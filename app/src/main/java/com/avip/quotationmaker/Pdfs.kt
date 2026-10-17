@@ -117,7 +117,7 @@ class Pdfs(private val context: Context) {
         savingsBlock(v, p)
 
         // ---- PM Surya Ghar steps ----
-        if (Money.subsidy(p, true) > 0) processSteps()
+        if (Money.subsidy(p, true) > 0) processSteps(v.isLoan)
 
         // ---- trust line ----
         val trust = "${s["installs_count"]} homes powered across Bihar under PM Surya Ghar  ·  Quality brands: Microtek, Adani, Waaree, Deye, APL Apollo, Finolex"
@@ -132,7 +132,9 @@ class Pdfs(private val context: Context) {
             "A/c No: ${s["bank_account_no"]}   ·   IFSC: ${s["bank_ifsc"]}   ·   ${s["bank_branch"]}",
             "GSTIN: ${s["gstin"]}",
         ))
-        val terms = s.list("q_terms")
+        val terms = if (v.isLoan) s.list("q_terms").map {
+            it.replace("customer's bank account", "customer's loan account").replace("bank account", "loan account")
+        } + s.list("q_loan_terms") else s.list("q_terms")
         if (terms.isNotEmpty()) textSection("Terms & conditions", terms.mapIndexed { i, t -> "${i + 1}. $t" })
         textSection("Note", listOf("Savings and payback are estimates based on typical Bihar sunshine and your tariff; actual generation depends on weather, shading and usage. Subsidy is as per the PM Surya Ghar scheme rules on the date of application."))
 
@@ -254,7 +256,7 @@ class Pdfs(private val context: Context) {
     }
 
     private fun bomTable(p: SystemPackage, v: Visit) {
-        data class R(val item: String, val spec: String, val qty: String, val warranty: String)
+        data class R(val item: String, val spec: String, val qty: String, val warranty: String, val highlight: Boolean = false)
         val rows = mutableListOf<R>()
         val tech = if (p.rows.any { it.first.contains("topcon", true) }) "TOPCon " else ""
         if (p.dcrCount > 0) rows += R("${tech}Solar Panels (DCR)", "${p.panelBrand} · ${Fmt.num(p.dcrWp)} Wp · made-in-India cells", "${p.dcrCount} nos", p.panelWarranty)
@@ -280,6 +282,8 @@ class Pdfs(private val context: Context) {
         p.specRows().filter { (l, _) -> known.none { l.lowercase().contains(it) } }.forEach { (l, value) -> rows += R(l, value, "", "") }
         rows += R("Installation & Commissioning", "Transport, fitting, testing", "Included", "")
         rows += R("PM Surya Ghar Paperwork", "Application, net-meter & subsidy support", "Included", "")
+        if (v.nameCorrection) rows += R("Name Correction", "Electricity connection name correction · complimentary AVIP service", "FREE", "", highlight = true)
+        if (v.nameTransferFee > 0) rows += R("Name Transfer", "Electricity connection name transfer with DISCOM", Fmt.inr(v.nameTransferFee), "", highlight = true)
 
         val cols = floatArrayOf(22f, 150f, 0f, 62f, 66f)
         cols[2] = width - cols.sum()
@@ -300,13 +304,16 @@ class Pdfs(private val context: Context) {
             val itemLines = wrap(r.item, cols[1] - 10f, paint(8.3f, ink, true))
             val h = 7f + maxOf(specLines.size, itemLines.size) * 10.5f + 3f
             if (y + h > pageH - 60f) { newPage(); header() }
-            if (i % 2 == 1) canvas.drawRect(margin, y, right, y + h, fill(0xFFF6F9F7.toInt()))
+            if (r.highlight) {
+                canvas.drawRect(margin, y, right, y + h, fill(sunLight))
+                canvas.drawRect(margin, y, margin + 3f, y + h, fill(sun))
+            } else if (i % 2 == 1) canvas.drawRect(margin, y, right, y + h, fill(0xFFF6F9F7.toInt()))
             var x = margin
             val base = y + 13f
             canvas.drawText("${i + 1}", x + cols[0] / 2, base, paint(8f, muted, align = Paint.Align.CENTER)); x += cols[0]
             itemLines.forEachIndexed { k, t -> canvas.drawText(t, x + 6f, base + k * 10.5f, paint(8.3f, ink, true)) }; x += cols[1]
             specLines.forEachIndexed { k, t -> canvas.drawText(t, x + 6f, base + k * 10.5f, sp) }; x += cols[2]
-            canvas.drawText(r.qty, x + 6f, base, paint(8f, ink)); x += cols[3]
+            canvas.drawText(r.qty, x + 6f, base, if (r.highlight) paint(8.5f, green, true) else paint(8f, ink)); x += cols[3]
             if (r.warranty.isNotBlank()) canvas.drawText(r.warranty, x + 6f, base, paint(8f, green, true))
             y += h
             canvas.drawLine(margin, y, right, y, stroke(rule, 0.5f))
@@ -318,7 +325,8 @@ class Pdfs(private val context: Context) {
         val sub = Money.subsidy(p, v.subsidyOn)
         val central = Money.central(p, v.subsidyOn)
         val state = Money.state(p, v.subsidyOn)
-        val h = if (sub > 0) 112f else 96f
+        val extraLine = v.nameTransferFee > 0 || v.nameCorrection
+        val h = (if (sub > 0) 112f else 96f) + (if (extraLine) 12f else 0f)
         need(h + 10f)
         val top = y
         val leftW = width * 0.56f
@@ -332,6 +340,12 @@ class Pdfs(private val context: Context) {
         }
         line("System price (incl. GST)", Fmt.inr(p.price))
         if (v.discount > 0) line("Special discount", "− " + Fmt.inr(v.discount))
+        if (v.nameTransferFee > 0) line("Name transfer (electricity connection)", "+ " + Fmt.inr(v.nameTransferFee))
+        if (v.nameCorrection) {
+            canvas.drawText("★ Name correction (connection)", margin + 12f, ly, paint(8.8f, sun, true))
+            canvas.drawText("FREE", margin + leftW - 12f, ly, paint(9f, sun, true, Paint.Align.RIGHT))
+            ly += 13f
+        }
         ly += 6f
         canvas.drawText("FINAL PRICE (incl. GST)", margin + 12f, ly + 2f, paint(8f, sun, true))
         canvas.drawText(Fmt.inr(v.finalPrice), margin + leftW - 12f, ly + 6f, paint(20f, Color.WHITE, true, Paint.Align.RIGHT))
@@ -354,7 +368,7 @@ class Pdfs(private val context: Context) {
             canvas.drawLine(rx + 12f, ry - 6f, rr, ry - 6f, stroke(rule, 0.6f))
             canvas.drawText("Total subsidy", rx + 12f, ry + 3f, paint(8f, ink, true))
             canvas.drawText("− " + Fmt.inr(sub), rr, ry + 3f, paint(10f, green, true, Paint.Align.RIGHT)); ry += 10f
-            canvas.drawText("credited to your bank account", rx + 12f, ry + 2f, paint(6.8f, muted)); ry += 16f
+            canvas.drawText(if (v.isLoan) "credited directly to your loan account" else "credited to your bank account", rx + 12f, ry + 2f, paint(6.8f, muted)); ry += 16f
             canvas.drawText("YOUR EFFECTIVE COST", rx + 12f, ry, paint(7.5f, ink, true)); ry += 17f
             canvas.drawText(Fmt.inr(v.finalPrice - sub), rx + 12f, ry, paint(17f, brandDark, true))
         } else {
@@ -424,14 +438,14 @@ class Pdfs(private val context: Context) {
         y += 14f
     }
 
-    private fun processSteps() {
+    private fun processSteps(loan: Boolean) {
         heading("How PM Surya Ghar works — we handle it with you")
         val steps = listOf(
             "Register" to "on pmsuryaghar.gov.in with your CA No",
             "Approval" to "DISCOM feasibility for your connection",
             "Install" to "AVIP installs & commissions the system",
             "Net meter" to "DISCOM fits net meter & inspects",
-            "Subsidy" to "central + Bihar subsidy to your bank",
+            "Subsidy" to (if (loan) "central + Bihar subsidy to your loan account" else "central + Bihar subsidy to your bank"),
         )
         need(66f)
         val w = width / steps.size
@@ -464,6 +478,7 @@ class Pdfs(private val context: Context) {
             "WhatsApp mobile" to v.mobile,
             "Consumer name" to v.name,
             "Address" to listOf(v.address, v.district, v.pincode).filter { it.isNotBlank() }.joinToString(", "),
+            "Name correction / transfer" to v.nameChange.let { if (it == "Name transfer") "Name transfer (${Fmt.inr(v.nameTransferFee)})" else if (it == "Name correction") "Name correction (free)" else it },
             "Project funding" to (if (v.isLoan) "Loan (${v.loanYears} yrs, EMI ${Fmt.inr(Money.emi(v))})" else v.funding),
             "Bank proof for subsidy" to (if (v.bankDocs.isEmpty()) "" else "${v.bankDocType.ifBlank { "Photo" }} — ${v.bankDocs.size} photo(s) attached"),
             "PAN" to (if (v.isLoan) v.pan else ""),

@@ -162,6 +162,7 @@ class AppSettings(private val map: Map<String, String>) {
             "subsidy_max" to "78000",
             "subsidy_hybrid" to "yes",
             "state_subsidy" to "20000",
+            "name_transfer_fee" to "1500",
             "state_subsidy_name" to "Bihar Govt. subsidy",
             // solar loan
             "loan_rate" to "5.75",
@@ -175,6 +176,8 @@ class AppSettings(private val map: Map<String, String>) {
             "q_terms_3" to "Extra structure height, civil work or cable length beyond the standard design will be charged separately.",
             "q_terms_4" to "Warranty as per manufacturer terms and conditions.",
             "q_terms_5" to "Payment schedule as agreed at the time of booking.",
+            // added to the terms only when the customer takes a bank loan
+            "q_loan_terms_1" to "Stamp paper charges for the loan agreement to be executed between the bank and the customer shall be borne by the customer.",
         )
     }
 }
@@ -212,6 +215,7 @@ class Visit(
     var sanctionedLoad = ""
     var monthlyBill = ""
     var funding = "" // "Loan" or "Own fund"
+    var nameChange = "" // "Not needed" / "Name correction" / "Name transfer"
     var downPayment = ""
     var loanYears = 10
     var bankDocType = "" // Bank statement / Passbook / Cancelled cheque
@@ -257,7 +261,11 @@ class Visit(
     val followUpDue get() = leadStatus == "Open" && followUpAt > 0 && followUpAt <= endOfToday()
     val hasLocation get() = lat != 0.0 || lng != 0.0
     val isQuoted get() = quotedAt > 0
-    val finalPrice: Double get() = ((pkg?.price ?: 0.0) - discount).coerceAtLeast(0.0)
+    val nameTransferFee: Double get() =
+        if (nameChange == "Name transfer") Catalog.settings.num("name_transfer_fee", 1500.0) else 0.0
+    val nameCorrection get() = nameChange == "Name correction"
+    /** System price after discount, plus the name-transfer fee when asked for. */
+    val finalPrice: Double get() = ((pkg?.price ?: 0.0) - discount).coerceAtLeast(0.0) + nameTransferFee
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("number", number); put("createdAt", createdAt); put("updatedAt", updatedAt); put("quotedAt", quotedAt)
@@ -272,7 +280,7 @@ class Visit(
         put("pkg", pkg?.toJson() ?: JSONObject.NULL); put("discount", discount); put("subsidyOn", subsidyOn)
         put("solarCapacityNote", solarCapacityNote)
         put("customerSign", customerSign); put("officerName", officerName); put("officerMobile", officerMobile)
-        put("funding", funding); put("downPayment", downPayment); put("loanYears", loanYears)
+        put("funding", funding); put("nameChange", nameChange); put("downPayment", downPayment); put("loanYears", loanYears)
         put("bankDocType", bankDocType); put("bankDocs", JSONArray(bankDocs))
         put("structureType", structureType); put("mountingLayout", mountingLayout); put("voiceNotes", JSONArray(voiceNotes))
         put("followUpAt", followUpAt); put("followUpNote", followUpNote); put("leadStatus", leadStatus)
@@ -300,7 +308,7 @@ class Visit(
             discount = o.optDouble("discount", 0.0); subsidyOn = o.optBoolean("subsidyOn", true)
             solarCapacityNote = o.optString("solarCapacityNote")
             customerSign = o.optString("customerSign"); officerName = o.optString("officerName"); officerMobile = o.optString("officerMobile")
-            funding = o.optString("funding"); downPayment = o.optString("downPayment"); loanYears = o.optInt("loanYears", 10)
+            funding = o.optString("funding"); nameChange = o.optString("nameChange"); downPayment = o.optString("downPayment"); loanYears = o.optInt("loanYears", 10)
             bankDocType = o.optString("bankDocType")
             o.optJSONArray("bankDocs")?.let { a -> for (i in 0 until a.length()) bankDocs += a.optString(i) }
             structureType = o.optString("structureType")

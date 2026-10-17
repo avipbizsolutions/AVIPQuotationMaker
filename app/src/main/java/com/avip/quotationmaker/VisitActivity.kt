@@ -324,6 +324,9 @@ class VisitActivity : AppCompatActivity() {
             field(this, "Consumer / CA number", v.caNo, "From the bill", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS, R.drawable.ic_bolt) { v.caNo = it }
             addView(text("Connection", 13f, Ui.MUTED, bold = true), lp().margins(context, t = 12, b = 6))
             addView(chips(listOf("Single phase", "Three phase"), v.phase) { v.phase = it })
+            addView(text("Name correction / transfer needed on the connection?", 13f, Ui.MUTED, bold = true), lp().margins(context, t = 12, b = 6))
+            addView(chips(listOf("Not needed", "Name correction", "Name transfer"), v.nameChange) { v.nameChange = it })
+            addView(text("Name correction is a free AVIP service · Name transfer ${Fmt.inr(Catalog.settings.num("name_transfer_fee", 1500.0))} is added to the quotation", 11.5f, Ui.MUTED), lp().margins(context, t = 4))
             addView(horizontal {
                 val l = vertical { }; val r = vertical { }
                 field(l, "Sanctioned load (kW)", v.sanctionedLoad, "e.g. 3", InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL) { v.sanctionedLoad = it }
@@ -823,6 +826,8 @@ class VisitActivity : AppCompatActivity() {
             addView(text("Final price (incl. GST)", 12.5f, 0xCCFFFFFF.toInt()), lp().margins(context, t = 14))
             addView(finalText)
             addView(text("List price ${Fmt.inr(p.price)}", 12f, 0xAAFFFFFF.toInt()))
+            if (v.nameTransferFee > 0) addView(text("Includes name transfer ${Fmt.inr(v.nameTransferFee)}", 12f, Ui.SUN, bold = true), lp().margins(context, t = 2))
+            if (v.nameCorrection) addView(text("★ Name correction: FREE service", 12f, Ui.SUN, bold = true), lp().margins(context, t = 2))
         })
 
         // discount
@@ -864,7 +869,8 @@ class VisitActivity : AppCompatActivity() {
                 addView(badge(R.drawable.ic_rupee, 0xFF2E7D32.toInt(), 38))
                 addView(vertical {
                     addView(text("Government subsidy", 15f, Ui.TEXT, bold = true))
-                    addView(text("On ${Fmt.num(p.dcrKw.takeIf { it > 0 } ?: p.kwp)} kW DCR panels · paid to customer's bank", 12f, Ui.MUTED))
+                    addView(text("On ${Fmt.num(p.dcrKw.takeIf { it > 0 } ?: p.kwp)} kW DCR panels · " +
+                        (if (v.isLoan) "credited directly to the loan account" else "paid to customer's bank"), 12f, Ui.MUTED))
                 }, lp(0, WRAP, 1f).margins(context, l = 10))
                 addView(SwitchCompat(context).apply {
                     isChecked = v.subsidyOn
@@ -961,6 +967,8 @@ class VisitActivity : AppCompatActivity() {
             addView(kv("Inverter", p.inverter))
             if (p.battery.isNotBlank()) addView(kv("Battery", p.battery))
             if (v.discount > 0) addView(kv("Discount", "− " + Fmt.inr(v.discount)))
+            if (v.nameTransferFee > 0) addView(kv("Name transfer", "+ " + Fmt.inr(v.nameTransferFee)))
+            if (v.nameCorrection) addView(kv("Name correction", "FREE", true))
             addView(kv("Final price", Fmt.inr(v.finalPrice), true))
             val sub = Money.subsidy(p, v.subsidyOn)
             if (sub > 0) addView(kv("After subsidy", Fmt.inr(v.finalPrice - sub)))

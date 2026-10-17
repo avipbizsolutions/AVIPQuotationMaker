@@ -1,11 +1,11 @@
-# AVIP Quotation Maker
+# AVIP Surya Sales
 
 Android app for the **AVIP Solar** sales team (AVIP Business Solutions LLP). The sales executive
 does the whole site visit on the phone at the customer's home and hands over a branded
 quotation before leaving — no more filling the paper form and sending the quote from office.
 
 **Download the latest APK:**
-https://github.com/avipbizsolutions/AVIPQuotationMaker/releases/latest/download/AVIP-Quotation-Maker.apk
+https://github.com/avipbizsolutions/AVIPQuotationMaker/releases/latest/download/AVIP-Surya-Sales.apk
 
 ## The visit, step by step
 1. **Customer** — name, WhatsApp number, address, district, PIN, DISCOM (NBPDCL / SBPDCL),
@@ -50,7 +50,8 @@ stay **private**, because it holds cost and margin. Phones pick up price changes
 `address`, `bank_account_name`, `bank_account_no`, `bank_ifsc`, `bank_branch`,
 `quote_validity_days` (7), `subsidy_per_kw_first_2` (30000), `subsidy_per_kw_3rd` (18000),
 `subsidy_max` (78000), `subsidy_hybrid` (yes), `state_subsidy` (20000), `state_subsidy_name` (Bihar Govt. subsidy),
-`loan_rate` (5.75), `loan_max_years` (10), `units_per_kw_per_day` (4),
+`loan_rate` (5.75), `loan_max_years` (10), `name_transfer_fee` (1500),
+`q_loan_terms_1` … (extra terms printed only on bank-loan quotations), `units_per_kw_per_day` (4),
 `tariff_per_unit` (7), `sqft_per_kw` (100), `installs_count` (300+),
 `q_terms_1` … `q_terms_12` (quotation terms), `announcement` (home-screen notice),
 `visit_log_url` (see below).

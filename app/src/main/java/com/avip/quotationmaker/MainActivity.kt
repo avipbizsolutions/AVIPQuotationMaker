@@ -55,7 +55,7 @@ class MainActivity : AppCompatActivity() {
             }, lp(0, WRAP, 1f).margins(context, l = 14))
             addView(text("›", 34f, Ui.TEXT, bold = true))
             setOnClickListener { startActivity(Intent(context, VisitActivity::class.java)) }
-        }, lp().margins(this, t = -30, b = 14))
+        }, lp().margins(this, t = 16, b = 14))
 
         // Stats
         val visits = VisitStore.all(this)
@@ -123,7 +123,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun hero(): View = vertical {
         background = gradient(0f, Ui.BRAND_DARK, Ui.BRAND)
-        setPadding(dp(18), dp(14), dp(10), dp(48))
+        setPadding(dp(18), dp(14), dp(10), dp(22))
         addView(horizontal {
             addView(android.widget.FrameLayout(context).apply {
                 background = rounded(Color.WHITE, dpf(12f))
@@ -133,7 +133,7 @@ class MainActivity : AppCompatActivity() {
                     adjustViewBounds = true
                 }, android.widget.FrameLayout.LayoutParams(dp(118), WRAP))
             }, lp(WRAP, WRAP))
-            addView(text("Quotation Maker", 14f, Color.WHITE, bold = true) { maxLines = 1 }, lp(0, WRAP, 1f).margins(context, l = 10))
+            addView(text("Surya Sales", 15f, Color.WHITE, bold = true) { maxLines = 1 }, lp(0, WRAP, 1f).margins(context, l = 10))
             addView(barButton(R.drawable.ic_refresh) { refresh() })
             addView(barButton(R.drawable.ic_person) { startActivity(Intent(context, ProfileActivity::class.java)) })
         })
