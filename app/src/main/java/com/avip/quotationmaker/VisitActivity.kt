@@ -472,12 +472,22 @@ class VisitActivity : AppCompatActivity() {
         updateArea()
 
         // photos
-        body.addView(sectionTitle("Site photos", "GPS stamped like AVIP GPSCam: map, address, lat/long, time, direction"), lp().margins(this, t = 20, b = 10))
-        body.addView(photoGrid(v.photos, bank = false))
-
-        // videos
-        body.addView(sectionTitle("Site videos", "Walk-around of roof and meter (not GPS stamped)"), lp().margins(this, t = 20, b = 10))
-        body.addView(videoGrid())
+        body.addView(sectionTitle("Site photos & videos",
+            "Photos are GPS stamped like AVIP GPSCam · videos are a walk-around (not stamped)"), lp().margins(this, t = 20, b = 10))
+        body.addView(horizontal {
+            addView(pillButton("Add photo", Ui.BRAND, iconRes = R.drawable.ic_camera, heightDp = 48) { addPhoto(false) }, lp(0, WRAP, 1f).margins(context, r = 10))
+            addView(pillButton("Add video", Ui.BLUE, iconRes = R.drawable.ic_video, heightDp = 48) { addVideo() }, lp(0, WRAP, 1f))
+        })
+        val photoCount = v.photos.size; val videoCount = v.videos.size
+        if (photoCount + videoCount == 0) {
+            body.addView(text("No photos or videos yet — roof, meter, inverter wall, stairs, walk-around", 12.5f, Ui.MUTED) { gravity = Gravity.CENTER },
+                lp().margins(this, t = 10))
+        } else {
+            body.addView(text("$photoCount photo" + (if (photoCount == 1) "" else "s") + " · $videoCount video" + (if (videoCount == 1) "" else "s"),
+                12.5f, Ui.MUTED, bold = true), lp().margins(this, t = 12, b = 6))
+            if (photoCount > 0) body.addView(photoGrid(v.photos, bank = false, withAdd = false))
+            if (videoCount > 0) body.addView(videoGrid(withAdd = false))
+        }
 
         // sketch (landscape, full screen)
         body.addView(sectionTitle("Site sketch", "Roof outline, obstacles and panel rows — drawn sideways for more room"), lp().margins(this, t = 20, b = 10))
@@ -548,9 +558,9 @@ class VisitActivity : AppCompatActivity() {
         }, lp().margins(this, t = 16))
     }
 
-    private fun photoGrid(list: MutableList<String>, bank: Boolean): View {
+    private fun photoGrid(list: MutableList<String>, bank: Boolean, withAdd: Boolean = true): View {
         val box = vertical { }
-        val items: List<String?> = list.toList() + listOf(null)
+        val items: List<String?> = list.toList() + if (withAdd) listOf(null) else emptyList()
         items.chunked(3).forEach { row ->
             box.addView(horizontal {
                 row.forEach { name ->
@@ -677,9 +687,9 @@ class VisitActivity : AppCompatActivity() {
             }.show()
     }
 
-    private fun videoGrid(): View {
+    private fun videoGrid(withAdd: Boolean = true): View {
         val box = vertical { }
-        val items: List<String?> = v.videos.toList() + listOf(null)
+        val items: List<String?> = v.videos.toList() + if (withAdd) listOf(null) else emptyList()
         items.chunked(3).forEach { row ->
             box.addView(horizontal {
                 row.forEach { name ->
