@@ -326,7 +326,7 @@ class VisitActivity : AppCompatActivity() {
             addView(chips(listOf("Single phase", "Three phase"), v.phase) { v.phase = it })
             addView(text("Name correction / transfer needed on the connection?", 13f, Ui.MUTED, bold = true), lp().margins(context, t = 12, b = 6))
             addView(chips(listOf("Not needed", "Name correction", "Name transfer"), v.nameChange) { v.nameChange = it })
-            addView(text("Name correction is a free AVIP service · Name transfer ${Fmt.inr(Catalog.settings.num("name_transfer_fee", 1500.0))} is added to the quotation", 11.5f, Ui.MUTED), lp().margins(context, t = 4))
+            addView(text("Name correction is a free AVIP service · Name transfer ${Fmt.inr(Catalog.settings.num("name_transfer_fee", 1500.0))} is shown on the quotation, payable separately", 11.5f, Ui.MUTED), lp().margins(context, t = 4))
             addView(horizontal {
                 val l = vertical { }; val r = vertical { }
                 field(l, "Sanctioned load (kW)", v.sanctionedLoad, "e.g. 3", InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL) { v.sanctionedLoad = it }
@@ -798,8 +798,13 @@ class VisitActivity : AppCompatActivity() {
         val centralText = text("", 14f, 0xFF2E7D32.toInt(), bold = true)
         val stateText = text("", 14f, 0xFF2E7D32.toInt(), bold = true)
         var loanRefresh: (() -> Unit)? = null
+        var gstText: TextView? = null
         fun refresh() {
             finalText.text = Fmt.inr(v.finalPrice)
+            Money.gst(v.finalPrice).let { g ->
+                gstText?.text = "GST billing: ${Fmt.num(g.goodsShare)}% @ ${Fmt.num(g.goodsRate)}% = ${Fmt.inr(g.goodsGst)} · " +
+                    "${Fmt.num(100 - g.goodsShare)}% @ ${Fmt.num(g.serviceRate)}% = ${Fmt.inr(g.serviceGst)} · total GST ${Fmt.inr(g.totalGst)}"
+            }
             discText.text = if (v.discount > 0) "− ${Fmt.inr(v.discount)}" else "No discount"
             val sub = Money.subsidy(p, v.subsidyOn)
             effText.text = Fmt.inr(v.finalPrice - sub)
@@ -826,7 +831,9 @@ class VisitActivity : AppCompatActivity() {
             addView(text("Final price (incl. GST)", 12.5f, 0xCCFFFFFF.toInt()), lp().margins(context, t = 14))
             addView(finalText)
             addView(text("List price ${Fmt.inr(p.price)}", 12f, 0xAAFFFFFF.toInt()))
-            if (v.nameTransferFee > 0) addView(text("Includes name transfer ${Fmt.inr(v.nameTransferFee)}", 12f, Ui.SUN, bold = true), lp().margins(context, t = 2))
+            gstText = text("", 11.5f, 0xCCFFFFFF.toInt())
+            addView(gstText, lp().margins(context, t = 4))
+            if (v.nameTransferFee > 0) addView(text("+ Name transfer ${Fmt.inr(v.nameTransferFee)} payable separately", 12f, Ui.SUN, bold = true), lp().margins(context, t = 4))
             if (v.nameCorrection) addView(text("★ Name correction: FREE service", 12f, Ui.SUN, bold = true), lp().margins(context, t = 2))
         })
 
@@ -967,7 +974,7 @@ class VisitActivity : AppCompatActivity() {
             addView(kv("Inverter", p.inverter))
             if (p.battery.isNotBlank()) addView(kv("Battery", p.battery))
             if (v.discount > 0) addView(kv("Discount", "− " + Fmt.inr(v.discount)))
-            if (v.nameTransferFee > 0) addView(kv("Name transfer", "+ " + Fmt.inr(v.nameTransferFee)))
+            if (v.nameTransferFee > 0) addView(kv("Name transfer", Fmt.inr(v.nameTransferFee) + " (paid separately)"))
             if (v.nameCorrection) addView(kv("Name correction", "FREE", true))
             addView(kv("Final price", Fmt.inr(v.finalPrice), true))
             val sub = Money.subsidy(p, v.subsidyOn)

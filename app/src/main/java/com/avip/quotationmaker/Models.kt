@@ -163,6 +163,10 @@ class AppSettings(private val map: Map<String, String>) {
             "subsidy_hybrid" to "yes",
             "state_subsidy" to "20000",
             "name_transfer_fee" to "1500",
+            // GST billing of a solar system: goods share at 5%, services share at 18%
+            "gst_goods_share" to "70",
+            "gst_goods_rate" to "5",
+            "gst_service_rate" to "18",
             "state_subsidy_name" to "Bihar Govt. subsidy",
             // solar loan
             "loan_rate" to "5.75",
@@ -264,8 +268,8 @@ class Visit(
     val nameTransferFee: Double get() =
         if (nameChange == "Name transfer") Catalog.settings.num("name_transfer_fee", 1500.0) else 0.0
     val nameCorrection get() = nameChange == "Name correction"
-    /** System price after discount, plus the name-transfer fee when asked for. */
-    val finalPrice: Double get() = ((pkg?.price ?: 0.0) - discount).coerceAtLeast(0.0) + nameTransferFee
+    /** System price after discount (GST included). Name transfer is paid separately. */
+    val finalPrice: Double get() = ((pkg?.price ?: 0.0) - discount).coerceAtLeast(0.0)
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("number", number); put("createdAt", createdAt); put("updatedAt", updatedAt); put("quotedAt", quotedAt)
@@ -362,6 +366,27 @@ object Money {
         val saving = yearlySaving(v.pkg)
         if (saving <= 0) return 0.0
         return (v.finalPrice - subsidy(v.pkg, v.subsidyOn)) / saving
+    }
+
+    /** GST split of a GST-inclusive amount. */
+    class Gst(
+        val goodsShare: Double, val goodsRate: Double, val serviceRate: Double,
+        val taxable: Double, val goodsTaxable: Double, val goodsGst: Double,
+        val serviceTaxable: Double, val serviceGst: Double,
+    ) {
+        val totalGst get() = goodsGst + serviceGst
+    }
+
+    fun gst(inclusive: Double): Gst {
+        val s = Catalog.settings
+        val share = s.num("gst_goods_share", 70.0).coerceIn(0.0, 100.0)
+        val gr = s.num("gst_goods_rate", 5.0)
+        val sr = s.num("gst_service_rate", 18.0)
+        val effective = share / 100 * gr / 100 + (100 - share) / 100 * sr / 100
+        val taxable = inclusive / (1 + effective)
+        val goodsTaxable = taxable * share / 100
+        val serviceTaxable = taxable - goodsTaxable
+        return Gst(share, gr, sr, taxable, goodsTaxable, goodsTaxable * gr / 100, serviceTaxable, serviceTaxable * sr / 100)
     }
 
     fun loanRate(): Double = Catalog.settings.num("loan_rate", 5.75)

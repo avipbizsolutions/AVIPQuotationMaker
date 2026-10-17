@@ -283,7 +283,7 @@ class Pdfs(private val context: Context) {
         rows += R("Installation & Commissioning", "Transport, fitting, testing", "Included", "")
         rows += R("PM Surya Ghar Paperwork", "Application, net-meter & subsidy support", "Included", "")
         if (v.nameCorrection) rows += R("Name Correction", "Electricity connection name correction · complimentary AVIP service", "FREE", "", highlight = true)
-        if (v.nameTransferFee > 0) rows += R("Name Transfer", "Electricity connection name transfer with DISCOM", Fmt.inr(v.nameTransferFee), "", highlight = true)
+        if (v.nameTransferFee > 0) rows += R("Name Transfer", "Electricity connection name transfer with DISCOM · paid separately", Fmt.inr(v.nameTransferFee), "", highlight = true)
 
         val cols = floatArrayOf(22f, 150f, 0f, 62f, 66f)
         cols[2] = width - cols.sum()
@@ -325,11 +325,14 @@ class Pdfs(private val context: Context) {
         val sub = Money.subsidy(p, v.subsidyOn)
         val central = Money.central(p, v.subsidyOn)
         val state = Money.state(p, v.subsidyOn)
-        val extraLine = v.nameTransferFee > 0 || v.nameCorrection
-        val h = (if (sub > 0) 112f else 96f) + (if (extraLine) 12f else 0f)
-        need(h + 10f)
-        val top = y
         val leftW = width * 0.56f
+        val g = Money.gst(v.finalPrice)
+        val wordsLines = wrap(Fmt.words(v.finalPrice), leftW - 24f, paint(7.3f)).size
+        val priceLines = 1 + (if (v.discount > 0) 1 else 0) + (if (v.nameCorrection) 1 else 0)
+        val leftH = 18f + priceLines * 13f + 6f + 20f + wordsLines * 9f + 10f + 12f + 3 * 11.5f + 6f
+        val h = maxOf(leftH, if (sub > 0) 112f else 96f)
+        need(h + 10f + (if (v.nameTransferFee > 0) 30f else 0f))
+        val top = y
         // left: price
         canvas.drawRoundRect(RectF(margin, top, margin + leftW, top + h), 8f, 8f, fill(brand))
         var ly = top + 18f
@@ -340,7 +343,6 @@ class Pdfs(private val context: Context) {
         }
         line("System price (incl. GST)", Fmt.inr(p.price))
         if (v.discount > 0) line("Special discount", "− " + Fmt.inr(v.discount))
-        if (v.nameTransferFee > 0) line("Name transfer (electricity connection)", "+ " + Fmt.inr(v.nameTransferFee))
         if (v.nameCorrection) {
             canvas.drawText("★ Name correction (connection)", margin + 12f, ly, paint(8.8f, sun, true))
             canvas.drawText("FREE", margin + leftW - 12f, ly, paint(9f, sun, true, Paint.Align.RIGHT))
@@ -350,7 +352,22 @@ class Pdfs(private val context: Context) {
         canvas.drawText("FINAL PRICE (incl. GST)", margin + 12f, ly + 2f, paint(8f, sun, true))
         canvas.drawText(Fmt.inr(v.finalPrice), margin + leftW - 12f, ly + 6f, paint(20f, Color.WHITE, true, Paint.Align.RIGHT))
         ly += 20f
-        wrapText(Fmt.words(v.finalPrice), margin + 12f, ly, leftW - 24f, paint(7.3f, 0xCCFFFFFF.toInt()), 9f)
+        ly = wrapText(Fmt.words(v.finalPrice), margin + 12f, ly, leftW - 24f, paint(7.3f, 0xCCFFFFFF.toInt()), 9f)
+        // GST billing (composite supply: goods share at goods rate, services share at service rate)
+        ly += 2f
+        canvas.drawLine(margin + 12f, ly, margin + leftW - 12f, ly, stroke(0x55FFFFFF, 0.6f))
+        ly += 10f
+        canvas.drawText("GST BILLING", margin + 12f, ly, paint(7f, sun, true))
+        ly += 11.5f
+        val gl = paint(7.6f, 0xDDFFFFFF.toInt())
+        val gr = paint(7.6f, Color.WHITE, align = Paint.Align.RIGHT)
+        val rx0 = margin + leftW - 12f
+        canvas.drawText("${Fmt.num(g.goodsShare)}% supply · taxable ${Fmt.inr(g.goodsTaxable)} @ ${Fmt.num(g.goodsRate)}%", margin + 12f, ly, gl)
+        canvas.drawText("GST ${Fmt.inr(g.goodsGst)}", rx0, ly, gr); ly += 11.5f
+        canvas.drawText("${Fmt.num(100 - g.goodsShare)}% services · taxable ${Fmt.inr(g.serviceTaxable)} @ ${Fmt.num(g.serviceRate)}%", margin + 12f, ly, gl)
+        canvas.drawText("GST ${Fmt.inr(g.serviceGst)}", rx0, ly, gr); ly += 11.5f
+        canvas.drawText("Total taxable value ${Fmt.inr(g.taxable)}", margin + 12f, ly, paint(7.6f, Color.WHITE, true))
+        canvas.drawText("Total GST ${Fmt.inr(g.totalGst)}", rx0, ly, paint(7.6f, Color.WHITE, true, Paint.Align.RIGHT))
 
         // right: subsidy & effective cost
         val rx = margin + leftW + 10f
@@ -377,7 +394,16 @@ class Pdfs(private val context: Context) {
                 canvas.drawText("✓  $it", rx + 12f, ry, paint(8.5f, ink)); ry += 12f
             }
         }
-        y = top + h + 14f
+        y = top + h + 8f
+        // name transfer is not part of the price: shown as a separate payment
+        if (v.nameTransferFee > 0) {
+            canvas.drawRoundRect(RectF(margin, y, right, y + 22f), 6f, 6f, fill(sunLight))
+            canvas.drawRect(margin, y, margin + 3f, y + 22f, fill(sun))
+            canvas.drawText("Name transfer on electricity connection — payable separately (not included in the final price)", margin + 12f, y + 14.5f, paint(8f, ink, true))
+            canvas.drawText(Fmt.inr(v.nameTransferFee), right - 10f, y + 14.5f, paint(10f, brandDark, true, Paint.Align.RIGHT))
+            y += 30f
+        }
+        y += 6f
     }
 
     private fun loanBlock(v: Visit, p: SystemPackage) {
