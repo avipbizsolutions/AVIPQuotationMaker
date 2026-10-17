@@ -222,6 +222,7 @@ class Visit(
     var monthlyBill = ""
     var funding = "" // "Loan" or "Own fund"
     var nameChange = "" // "Not needed" / "Name correction" / "Name transfer"
+    var smartMeter = "" // "Installed" / "Not installed"
     var downPayment = ""
     var loanAmount = "" // asked at the customer step when funding is Loan (required)
     var loanYears = 10
@@ -288,7 +289,7 @@ class Visit(
         put("pkg", pkg?.toJson() ?: JSONObject.NULL); put("discount", discount); put("subsidyOn", subsidyOn)
         put("solarCapacityNote", solarCapacityNote)
         put("customerSign", customerSign); put("officerName", officerName); put("officerMobile", officerMobile)
-        put("funding", funding); put("loanAmount", loanAmount); put("nameChange", nameChange); put("downPayment", downPayment); put("loanYears", loanYears)
+        put("funding", funding); put("loanAmount", loanAmount); put("nameChange", nameChange); put("smartMeter", smartMeter); put("downPayment", downPayment); put("loanYears", loanYears)
         put("bankDocType", bankDocType); put("bankDocs", JSONArray(bankDocs))
         put("structureType", structureType); put("mountingLayout", mountingLayout); put("voiceNotes", JSONArray(voiceNotes)); put("videos", JSONArray(videos))
         put("followUpAt", followUpAt); put("followUpNote", followUpNote); put("leadStatus", leadStatus)
@@ -316,7 +317,7 @@ class Visit(
             discount = o.optDouble("discount", 0.0); subsidyOn = o.optBoolean("subsidyOn", true)
             solarCapacityNote = o.optString("solarCapacityNote")
             customerSign = o.optString("customerSign"); officerName = o.optString("officerName"); officerMobile = o.optString("officerMobile")
-            funding = o.optString("funding"); loanAmount = o.optString("loanAmount"); nameChange = o.optString("nameChange"); downPayment = o.optString("downPayment"); loanYears = o.optInt("loanYears", 10)
+            funding = o.optString("funding"); loanAmount = o.optString("loanAmount"); nameChange = o.optString("nameChange"); smartMeter = o.optString("smartMeter"); downPayment = o.optString("downPayment"); loanYears = o.optInt("loanYears", 10)
             bankDocType = o.optString("bankDocType")
             o.optJSONArray("bankDocs")?.let { a -> for (i in 0 until a.length()) bankDocs += a.optString(i) }
             structureType = o.optString("structureType")

@@ -327,6 +327,8 @@ class VisitActivity : AppCompatActivity() {
             field(this, "Consumer / CA number", v.caNo, "From the bill", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS, R.drawable.ic_bolt) { v.caNo = it }
             addView(text("Connection", 13f, Ui.MUTED, bold = true), lp().margins(context, t = 12, b = 6))
             addView(chips(listOf("Single phase", "Three phase"), v.phase) { v.phase = it })
+            addView(text("Smart meter", 13f, Ui.MUTED, bold = true), lp().margins(context, t = 12, b = 6))
+            addView(chips(listOf("Installed", "Not installed"), v.smartMeter) { v.smartMeter = it })
             addView(text("Name correction / transfer needed on the connection?", 13f, Ui.MUTED, bold = true), lp().margins(context, t = 12, b = 6))
             addView(chips(listOf("Not needed", "Name correction", "Name transfer"), v.nameChange) { v.nameChange = it })
             addView(text("Name correction is a free AVIP service · Name transfer ${Fmt.inr(Catalog.settings.num("name_transfer_fee", 1500.0))} is shown on the quotation, payable separately", 11.5f, Ui.MUTED), lp().margins(context, t = 4))

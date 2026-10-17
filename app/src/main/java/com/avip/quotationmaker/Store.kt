@@ -183,6 +183,7 @@ object Remote {
             .put("lastCall", v.followUps.lastOrNull()?.let { "${day.format(Date(it.at))}: ${it.outcome}" + if (it.note.isBlank()) "" else " — ${it.note}" } ?: "")
             .put("notes", listOf(
                 when { v.nameCorrection -> "Name correction (free)"; v.nameTransferFee > 0 -> "Name transfer (+${v.nameTransferFee.toInt()})"; else -> "" },
+                if (v.smartMeter.isNotBlank()) "Smart meter: ${v.smartMeter}" else "",
                 v.siteNotes,
             ).filter { it.isNotBlank() }.joinToString(" | ")).put("voiceNotes", v.voiceNotes.size).put("photos", v.photos.size)
             .put("appVersion", Updater.currentVersionName(c))
