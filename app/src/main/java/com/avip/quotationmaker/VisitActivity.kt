@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 /**
  * The site visit, step by step:
@@ -903,6 +904,7 @@ class VisitActivity : AppCompatActivity() {
         } }
     }
 
+    private var loanField: android.widget.EditText? = null
     private var customOpen = false
     private var customFields: MutableMap<String, String>? = null
 
@@ -1046,7 +1048,16 @@ class VisitActivity : AppCompatActivity() {
                     thumbTintList = android.content.res.ColorStateList.valueOf(Ui.SUN)
                     setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                         override fun onProgressChanged(s: SeekBar?, value: Int, fromUser: Boolean) {
-                            if (fromUser) { v.discount = (value * stepAmt).coerceAtMost(max); refresh() }
+                            if (fromUser) {
+                                val oldFinal = v.finalPrice
+                                v.discount = (value * stepAmt).coerceAtMost(max)
+                                // a loan still at the full cost follows the new cost
+                                if (v.isLoan && (Fmt.parse(v.loanAmount) ?: -1.0).roundToLong() == oldFinal.roundToLong()) {
+                                    v.loanAmount = v.finalPrice.roundToLong().toString()
+                                    loanField?.setText(v.loanAmount)
+                                }
+                                refresh()
+                            }
                         }
                         override fun onStartTrackingTouch(s: SeekBar?) {}
                         override fun onStopTrackingTouch(s: SeekBar?) { save() }
@@ -1091,7 +1102,10 @@ class VisitActivity : AppCompatActivity() {
         // funding: discussed once the system and price are known
         body.addView(sectionTitle("Project funding", "How will the customer pay for ${Fmt.inr(v.finalPrice)}?"), lp().margins(this, t = 20, b = 10))
         body.addView(tiles(listOf("Own fund" to R.drawable.ic_rupee, "Loan" to R.drawable.ic_bolt), v.funding, columns = 2) {
-            v.funding = it; save(); render()
+            v.funding = it
+            // start the loan at the full project cost; the executive can lower it
+            if (v.isLoan && (Fmt.parse(v.loanAmount) ?: 0.0) <= 0) v.loanAmount = v.finalPrice.roundToLong().toString()
+            save(); render()
         })
         if (v.isLoan) {
             val emiText = text("", 26f, Ui.BLUE, bold = true)
@@ -1119,7 +1133,8 @@ class VisitActivity : AppCompatActivity() {
                     addView(text("Solar loan", 15f, Ui.TEXT, bold = true), lp(0, WRAP, 1f).margins(context, l = 6))
                 })
                 addView(text("Rates: ${Money.rateSlabs()} · up to ${Money.maxYears()} years", 12f, Ui.MUTED), lp().margins(context, t = 2))
-                field(this, "Loan amount (₹) *  — max ${Fmt.inr(v.finalPrice)}", v.loanAmount, "Amount the customer will borrow", InputType.TYPE_CLASS_NUMBER, R.drawable.ic_rupee) {
+                if (v.isLoan && (Fmt.parse(v.loanAmount) ?: 0.0) <= 0) v.loanAmount = v.finalPrice.roundToLong().toString()
+                loanField = field(this, "Loan amount (₹) *  — max ${Fmt.inr(v.finalPrice)}", v.loanAmount, "Amount the customer will borrow", InputType.TYPE_CLASS_NUMBER, R.drawable.ic_rupee) {
                     v.loanAmount = it; loanRefresh?.invoke()
                 }
                 addView(error, lp().margins(context, t = 4))
