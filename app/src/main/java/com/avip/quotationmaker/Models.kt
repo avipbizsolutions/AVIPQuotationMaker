@@ -175,6 +175,7 @@ class AppSettings(private val map: Map<String, String>) {
             "loan_max_years" to "10",
             // savings estimate
             "units_per_kw_per_day" to "4",
+            "savings_years" to "30", // lifetime savings period = panel warranty
             "tariff_per_unit" to "7",
             "installs_count" to "300+",
             "q_terms_1" to "Price includes GST, transport, standard structure, wiring, earthing, lightning arrester and installation.",
@@ -393,6 +394,11 @@ object Money {
         (p?.kwp ?: 0.0) * Catalog.settings.num("units_per_kw_per_day", 4.0) * 365
 
     fun yearlySaving(p: SystemPackage?): Double = yearlyUnits(p) * Catalog.settings.num("tariff_per_unit", 7.0)
+
+    /** Years used for lifetime savings (30, the panel warranty). */
+    fun savingsYears(): Int = Catalog.settings.num("savings_years", 30.0).toInt().coerceAtLeast(1)
+
+    fun lifetimeSaving(p: SystemPackage?): Double = yearlySaving(p) * savingsYears()
 
     fun paybackYears(v: Visit): Double {
         val saving = yearlySaving(v.pkg)

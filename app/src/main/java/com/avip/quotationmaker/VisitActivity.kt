@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.drawable.GradientDrawable
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -1142,11 +1143,51 @@ class VisitActivity : AppCompatActivity() {
                 field(this, "PAN", v.pan, "ABCDE1234F", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS, maxLen = 10) { v.pan = it.uppercase() }
                 field(this, "Aadhaar", v.aadhaar, "12 digits", InputType.TYPE_CLASS_NUMBER, maxLen = 12) { v.aadhaar = it }
                 addView(text("Aadhaar prints only on the internal site visit report, never on the quotation.", 11.5f, Ui.MUTED), lp().margins(context, t = 6))
-                addView(text("Tenure", 13f, Ui.MUTED, bold = true), lp().margins(context, t = 12, b = 6))
-                v.loanYears = v.loanYears.coerceIn(1, Money.maxYears())
-                addView(chips((1..Money.maxYears()).map { "$it yr" + if (it > 1) "s" else "" }, "${v.loanYears} yr" + if (v.loanYears > 1) "s" else "") { picked ->
-                    picked.substringBefore(' ').toIntOrNull()?.let { v.loanYears = it; save(); loanRefresh?.invoke() }
-                })
+                val maxY = Money.maxYears()
+                v.loanYears = v.loanYears.coerceIn(1, maxY)
+                val tenureText = text("${v.loanYears} year" + if (v.loanYears > 1) "s" else "", 15f, Ui.BLUE, bold = true)
+                addView(horizontal {
+                    addView(text("Tenure", 13f, Ui.MUTED, bold = true), lp(0, WRAP, 1f))
+                    addView(tenureText)
+                }, lp().margins(context, t = 14, b = 4))
+                // slider 1..max years with a small mark for every year
+                addView(SeekBar(context).apply {
+                    setPadding(dp(16), paddingTop, dp(16), paddingBottom)
+                    max = maxY - 1
+                    progress = v.loanYears - 1
+                    tickMark = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(0xFF9DB4D6.toInt())
+                        setSize(dp(6), dp(6))
+                    }
+                    progressTintList = android.content.res.ColorStateList.valueOf(Ui.BLUE)
+                    thumbTintList = android.content.res.ColorStateList.valueOf(Ui.BLUE)
+                    setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                        override fun onProgressChanged(s: SeekBar?, value: Int, fromUser: Boolean) {
+                            if (!fromUser) return
+                            v.loanYears = value + 1
+                            tenureText.text = "${v.loanYears} year" + if (v.loanYears > 1) "s" else ""
+                            loanRefresh?.invoke()
+                        }
+                        override fun onStartTrackingTouch(s: SeekBar?) {}
+                        override fun onStopTrackingTouch(s: SeekBar?) { save() }
+                    })
+                }, lp().margins(context, t = 2))
+                // year numbers drawn exactly under each mark
+                val trackPad = dp(16)
+                addView(object : View(context) {
+                    val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                        color = Ui.MUTED; textSize = dpf(11f); textAlign = android.graphics.Paint.Align.CENTER
+                    }
+                    override fun onDraw(c: android.graphics.Canvas) {
+                        val n = maxY
+                        val span = (width - 2 * trackPad).toFloat()
+                        for (i in 0 until n) {
+                            val x = trackPad + if (n == 1) span / 2 else span * i / (n - 1)
+                            c.drawText("${i + 1}", x, p.textSize, p)
+                        }
+                    }
+                }, lp(MATCH, dp(16)))
                 addView(text("Monthly EMI", 12.5f, Ui.MUTED), lp().margins(context, t = 14))
                 addView(emiText)
                 addView(loanText)
@@ -1168,8 +1209,8 @@ class VisitActivity : AppCompatActivity() {
             addView(tile("", "payback", Ui.BLUE, paybackText), lp(0, WRAP, 1f))
         })
         body.addView(card {
-            val life = saving * 25
-            addView(text("25-year savings", 13f, Ui.MUTED, bold = true))
+            val life = Money.lifetimeSaving(p)
+            addView(text("${Money.savingsYears()}-year savings (panel warranty period)", 13f, Ui.MUTED, bold = true))
             addView(text(Fmt.inr(life), 24f, 0xFF2E7D32.toInt(), bold = true))
             addView(text("vs. a one-time cost of ${Fmt.inr(v.finalPrice)}", 12f, Ui.MUTED))
             val ratio = if (life > 0) (v.finalPrice / life).toFloat().coerceIn(0.05f, 1f) else 1f

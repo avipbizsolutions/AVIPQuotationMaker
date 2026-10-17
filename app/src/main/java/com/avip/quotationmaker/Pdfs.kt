@@ -447,7 +447,7 @@ class Pdfs(private val context: Context) {
             "${(units / 12).toInt()} units" to "generated per month",
             Fmt.inr(saving / 12) to "saved per month",
             (if (payback > 0) "${Fmt.one(payback)} years" else "—") to "payback",
-            Fmt.inr(saving * 25) to "saved in 25 years",
+            Fmt.inr(Money.lifetimeSaving(p)) to "saved in ${Money.savingsYears()} years",
         )
         val gap = 6f
         val w = (width - gap * (stats.size - 1)) / stats.size
