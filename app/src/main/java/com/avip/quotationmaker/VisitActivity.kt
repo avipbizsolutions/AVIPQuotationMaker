@@ -164,6 +164,66 @@ class VisitActivity : AppCompatActivity() {
         render()
         // tag the site automatically: the executive is standing at the customer's home
         if (!v.hasLocation && !v.isQuoted) autoLocate()
+        else if (v.hasLocation && v.address.isBlank() && !v.isQuoted) fillAddress(force = false)
+    }
+
+    // ---------- address from GPS (fields stay editable) ----------
+
+    private var addressField: android.widget.EditText? = null
+    private var districtField: android.widget.EditText? = null
+    private var pinField: android.widget.EditText? = null
+    private var gettingAddress = false
+    private var forceAddress = false
+
+    /** "Use current location": take a fresh GPS fix and replace the address fields. */
+    private fun refreshAddressFromGps() {
+        forceAddress = true
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!granted) { autoLocate(); return }
+        captureLocation(silent = true)
+    }
+
+    /**
+     * Fills address, district and PIN from the site's GPS position. Without [force] only
+     * empty fields are filled, so anything the executive typed is kept.
+     */
+    private fun fillAddress(force: Boolean) {
+        if (!v.hasLocation || gettingAddress) return
+        gettingAddress = true
+        val lat = v.lat; val lng = v.lng
+        lifecycleScope.launch {
+            val a = withContext(Dispatchers.IO) {
+                try {
+                    @Suppress("DEPRECATION")
+                    if (android.location.Geocoder.isPresent())
+                        android.location.Geocoder(this@VisitActivity, java.util.Locale("en", "IN")).getFromLocation(lat, lng, 1)?.firstOrNull()
+                    else null
+                } catch (_: Exception) { null }
+            }
+            gettingAddress = false
+            if (a == null) {
+                if (force) toast("Couldn't find the address — check internet, or type it in")
+                return@launch
+            }
+            val drop = listOfNotNull(a.adminArea, a.countryName, a.postalCode).map { it.lowercase() }
+            val line = ((if (a.maxAddressLineIndex >= 0) a.getAddressLine(0) else null)
+                ?.split(',')?.map { it.trim() }
+                ?.filter { part ->
+                    val low = part.lowercase()
+                    part.isNotBlank() && drop.none { d -> low == d || (low.startsWith(d) && low.drop(d.length).trim().all { it.isDigit() }) }
+                }
+                ?.joinToString(", ")
+                ?: listOfNotNull(a.subLocality, a.locality).joinToString(", "))
+            val district = (a.subAdminArea ?: a.locality ?: "").replace(" Division", "").replace(" district", "", ignoreCase = true).trim()
+            val pin = a.postalCode ?: ""
+            // update the boxes in place, so a field being typed in keeps its keyboard
+            if ((force || v.address.isBlank()) && line.isNotBlank()) { v.address = line; addressField?.setText(line) }
+            if ((force || v.district.isBlank()) && district.isNotBlank()) { v.district = district; districtField?.setText(district) }
+            if ((force || v.pincode.isBlank()) && pin.isNotBlank()) { v.pincode = pin; pinField?.setText(pin) }
+            save()
+            if (force) toast("Address filled from GPS — edit if needed")
+        }
     }
 
     private var locating = false
@@ -257,6 +317,7 @@ class VisitActivity : AppCompatActivity() {
     // ---------- rendering ----------
 
     private fun render() {
+        addressField = null; districtField = null; pinField = null
         savePads() // keep a sketch / signature in progress when the screen is rebuilt
         renderStepBar()
         body.removeAllViews()
@@ -311,11 +372,17 @@ class VisitActivity : AppCompatActivity() {
         body.addView(card {
             field(this, "Customer name *", v.name, "Full name", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS, R.drawable.ic_person) { v.name = it }
             field(this, "WhatsApp mobile number *", v.mobile, "10-digit number", InputType.TYPE_CLASS_PHONE, R.drawable.ic_chat, 13) { v.mobile = it }
-            field(this, "Address", v.address, "House, mohalla, village / town", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS or InputType.TYPE_TEXT_FLAG_MULTI_LINE, R.drawable.ic_location) { v.address = it }
+            addressField = field(this, "Address (filled from GPS — edit if needed)", v.address, "House, mohalla, village / town", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS or InputType.TYPE_TEXT_FLAG_MULTI_LINE, R.drawable.ic_location) { v.address = it }
+            addView(horizontal {
+                addView(icon(R.drawable.ic_location, Ui.BRAND, 16))
+                addView(text("Use current location", 13.5f, Ui.BRAND, bold = true), lp(WRAP, WRAP).margins(context, l = 6))
+                setPadding(0, dp(8), dp(8), dp(2))
+                setOnClickListener { refreshAddressFromGps() }
+            })
             addView(horizontal {
                 val l = vertical { }; val r = vertical { }
-                field(l, "District", v.district, "e.g. Patna", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS) { v.district = it }
-                field(r, "PIN code", v.pincode, "6 digits", InputType.TYPE_CLASS_NUMBER, maxLen = 6) { v.pincode = it }
+                districtField = field(l, "District", v.district, "e.g. Patna", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS) { v.district = it }
+                pinField = field(r, "PIN code", v.pincode, "6 digits", InputType.TYPE_CLASS_NUMBER, maxLen = 6) { v.pincode = it }
                 addView(l, lp(0, WRAP, 1.4f).margins(context, r = 10)); addView(r, lp(0, WRAP, 1f))
             })
         })
@@ -1364,6 +1431,8 @@ class VisitActivity : AppCompatActivity() {
             }
             v.lat = loc.latitude; v.lng = loc.longitude
             save()
+            fillAddress(force = forceAddress)
+            forceAddress = false
             if (step == 1) render()
             toast((if (silent) "Site location tagged" else "Location saved") + " (±${loc.accuracy.roundToInt()} m)")
         }
