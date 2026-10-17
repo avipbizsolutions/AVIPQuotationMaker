@@ -420,7 +420,7 @@ class Pdfs(private val context: Context) {
         val cols = listOf(
             "Loan amount" to Fmt.inr(amt),
             "Own contribution" to Fmt.inr(Money.downPayment(v)),
-            "Interest rate" to "${Fmt.num(Money.loanRate())}% p.a.",
+            "Interest rate" to "${Fmt.num(Money.loanRate(amt))}% p.a.",
             "Total interest" to Fmt.inr(emi * months - amt),
         )
         val startX = margin + 150f

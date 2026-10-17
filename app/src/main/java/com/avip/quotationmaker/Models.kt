@@ -169,7 +169,9 @@ class AppSettings(private val map: Map<String, String>) {
             "gst_service_rate" to "18",
             "state_subsidy_name" to "Bihar Govt. subsidy",
             // solar loan
-            "loan_rate" to "5.75",
+            "loan_rate_slab" to "200000",
+            "loan_rate_upto_slab" to "6",
+            "loan_rate_above_slab" to "8.25",
             "loan_max_years" to "10",
             // savings estimate
             "units_per_kw_per_day" to "4",
@@ -392,12 +394,26 @@ object Money {
         return Gst(share, gr, sr, taxable, goodsTaxable, goodsTaxable * gr / 100, serviceTaxable, serviceTaxable * sr / 100)
     }
 
-    fun loanRate(): Double = Catalog.settings.num("loan_rate", 5.75)
+    fun slab(): Double = Catalog.settings.num("loan_rate_slab", 200000.0)
+
+    /** 6% for loans up to ₹2 lakh, 8.25% above (both from App Settings). */
+    fun loanRate(amount: Double): Double =
+        if (amount <= slab()) Catalog.settings.num("loan_rate_upto_slab", 6.0)
+        else Catalog.settings.num("loan_rate_above_slab", 8.25)
+
+    fun loanRate(v: Visit): Double = loanRate(loanAmount(v))
+
+    /** Short description of the slabs, e.g. "6% up to ₹2,00,000 · 8.25% above". */
+    fun rateSlabs(): String = "${Fmt.num(loanRate(slab()))}% up to ${Fmt.inr(slab())} · ${Fmt.num(loanRate(slab() + 1))}% above"
+
+    /** Loan entered is more than the project cost. */
+    fun loanTooHigh(v: Visit): Boolean = (Fmt.parse(v.loanAmount) ?: 0.0) > v.finalPrice + 0.5
     fun maxYears(): Int = Catalog.settings.num("loan_max_years", 10.0).toInt().coerceAtLeast(1)
 
+    /** Loan amount, never more than the project cost. */
     fun loanAmount(v: Visit): Double =
         (Fmt.parse(v.loanAmount)?.takeIf { it > 0 }
-            ?: (v.finalPrice - (Fmt.parse(v.downPayment) ?: 0.0))).coerceAtLeast(0.0)
+            ?: (v.finalPrice - (Fmt.parse(v.downPayment) ?: 0.0))).coerceIn(0.0, v.finalPrice)
 
     /** What the customer pays from own funds when taking a loan. */
     fun downPayment(v: Visit): Double = (v.finalPrice - loanAmount(v)).coerceAtLeast(0.0)
@@ -405,7 +421,7 @@ object Money {
     /** Monthly EMI on [principal] at the loan rate for [years]. */
     fun emi(principal: Double, years: Int): Double {
         if (principal <= 0 || years <= 0) return 0.0
-        val r = loanRate() / 12 / 100
+        val r = loanRate(principal) / 12 / 100
         val n = years * 12
         if (r == 0.0) return principal / n
         val f = Math.pow(1 + r, n.toDouble())

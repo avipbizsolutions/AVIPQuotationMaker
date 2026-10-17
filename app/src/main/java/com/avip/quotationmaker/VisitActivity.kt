@@ -218,10 +218,10 @@ class VisitActivity : AppCompatActivity() {
         if (step == 0) {
             if (v.name.isBlank()) { toast("Enter the customer's name"); return }
             if (v.mobile.filter { it.isDigit() }.length < 10) { toast("Enter a 10-digit WhatsApp number"); return }
-            if (v.isLoan && (Fmt.parse(v.loanAmount) ?: 0.0) <= 0) { toast("Enter the loan amount"); return }
         }
         if (step == 2 && v.pkg == null) { toast("Pick a system first"); return }
         if (step == 2 && (v.pkg?.price ?: 0.0) <= 0) { toast("Enter the price of the custom system"); return }
+        if (step == 3) fundingProblem()?.let { toast(it); return }
         if (step == 4) {
             if (v.leadStatus == "Open" && v.followUpAt <= 0) {
                 toast("Set the next follow-up date before creating the quotation")
@@ -236,7 +236,7 @@ class VisitActivity : AppCompatActivity() {
     private fun go(to: Int) {
         if (to < 0) { leave(); return }
         if (to > 0 && v.name.isBlank()) { toast("Enter the customer's name first"); step = 0; render(); return }
-        if (to > 0 && step == 0 && v.isLoan && (Fmt.parse(v.loanAmount) ?: 0.0) <= 0) { toast("Enter the loan amount"); return }
+        if (to >= 4 && fundingProblem() != null) { toast(fundingProblem()!!); step = 3; render(); return }
         if (to >= 3 && v.pkg == null) { toast("Pick a system first"); step = 2; render(); return }
         savePads(); save()
         step = to.coerceIn(0, 4)
@@ -337,24 +337,6 @@ class VisitActivity : AppCompatActivity() {
                 addView(l, lp(0, WRAP, 1f).margins(context, r = 10)); addView(r, lp(0, WRAP, 1f))
             })
         })
-
-        body.addView(sectionTitle("Project funding", "How will the customer pay?"), lp().margins(this, t = 20, b = 10))
-        body.addView(tiles(listOf("Own fund" to R.drawable.ic_rupee, "Loan" to R.drawable.ic_bolt), v.funding, columns = 2) {
-            v.funding = it; save(); render()
-        })
-        if (v.isLoan) {
-            body.addView(card {
-                addView(horizontal {
-                    addView(icon(R.drawable.ic_person, Ui.BRAND, 18))
-                    addView(text("KYC for the solar loan", 14f, Ui.TEXT, bold = true), lp(0, WRAP, 1f).margins(context, l = 6))
-                })
-                addView(text("Loan @ ${Fmt.num(Money.loanRate())}% for up to ${Money.maxYears()} years", 12f, Ui.MUTED), lp().margins(context, t = 2))
-                field(this, "Loan amount (₹) *", v.loanAmount, "Amount the customer will borrow", InputType.TYPE_CLASS_NUMBER, R.drawable.ic_rupee) { v.loanAmount = it }
-                field(this, "PAN", v.pan, "ABCDE1234F", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS, maxLen = 10) { v.pan = it.uppercase() }
-                field(this, "Aadhaar", v.aadhaar, "12 digits", InputType.TYPE_CLASS_NUMBER, maxLen = 12) { v.aadhaar = it }
-                addView(text("Aadhaar prints only on the internal site visit report, never on the quotation.", 11.5f, Ui.MUTED), lp().margins(context, t = 6))
-            }, lp().margins(this, t = 4))
-        }
 
         body.addView(sectionTitle("Bank proof for subsidy", "Account where the subsidy will be credited"), lp().margins(this, t = 20, b = 10))
         body.addView(chips(listOf("Bank statement", "Passbook", "Cancelled cheque"), v.bankDocType) { v.bankDocType = it })
@@ -1027,25 +1009,45 @@ class VisitActivity : AppCompatActivity() {
             addView(effSub)
         }, lp().margins(this, t = 12))
 
-        // loan
+        // funding: discussed once the system and price are known
+        body.addView(sectionTitle("Project funding", "How will the customer pay for ${Fmt.inr(v.finalPrice)}?"), lp().margins(this, t = 20, b = 10))
+        body.addView(tiles(listOf("Own fund" to R.drawable.ic_rupee, "Loan" to R.drawable.ic_bolt), v.funding, columns = 2) {
+            v.funding = it; save(); render()
+        })
         if (v.isLoan) {
             val emiText = text("", 26f, Ui.BLUE, bold = true)
             val loanText = text("", 12.5f, Ui.MUTED)
             val compare = text("", 12.5f, Ui.TEXT, bold = true)
+            val rateText = text("", 13f, Ui.BLUE, bold = true)
+            val error = text("", 12.5f, Ui.DANGER, bold = true)
             loanRefresh = {
+                val tooHigh = Money.loanTooHigh(v)
+                error.text = if (tooHigh) "Loan can't be more than the project cost of ${Fmt.inr(v.finalPrice)}" else ""
+                error.visibility = if (tooHigh) View.VISIBLE else View.GONE
                 val amt = Money.loanAmount(v)
                 val emi = Money.emi(v)
-                emiText.text = "${Fmt.inr(emi)} / month"
-                loanText.text = "Loan ${Fmt.inr(amt)} @ ${Fmt.num(Money.loanRate())}% for ${v.loanYears} yrs · interest ${Fmt.inr(emi * v.loanYears * 12 - amt)}" +
-                    "\nCustomer's own contribution ${Fmt.inr(Money.downPayment(v))}"
+                val rate = Money.loanRate(amt)
+                rateText.text = "Interest ${Fmt.num(rate)}% p.a." + if (amt > 0) (if (amt <= Money.slab()) "  (loan up to ${Fmt.inr(Money.slab())})" else "  (loan above ${Fmt.inr(Money.slab())})") else ""
+                emiText.text = if (emi > 0) "${Fmt.inr(emi)} / month" else "—"
+                loanText.text = if (amt > 0) "Loan ${Fmt.inr(amt)} for ${v.loanYears} yrs · total interest ${Fmt.inr(emi * v.loanYears * 12 - amt)}" +
+                    "\nCustomer's own contribution ${Fmt.inr(Money.downPayment(v))}" else "Enter the loan amount"
                 val save = Money.yearlySaving(p) / 12
                 compare.text = if (emi > 0 && save > 0) "Bill saving ${Fmt.inr(save)}/month covers ${((save / emi) * 100).roundToInt().coerceAtMost(999)}% of the EMI" else ""
             }
-            body.addView(sectionTitle("Solar loan", "Interest ${Fmt.num(Money.loanRate())}% · up to ${Money.maxYears()} years"), lp().margins(this, t = 20, b = 10))
             body.addView(card {
-                field(this, "Loan amount (₹) *", v.loanAmount, "Amount the customer will borrow", InputType.TYPE_CLASS_NUMBER, R.drawable.ic_rupee) {
+                addView(horizontal {
+                    addView(icon(R.drawable.ic_bolt, Ui.BLUE, 18))
+                    addView(text("Solar loan", 15f, Ui.TEXT, bold = true), lp(0, WRAP, 1f).margins(context, l = 6))
+                })
+                addView(text("Rates: ${Money.rateSlabs()} · up to ${Money.maxYears()} years", 12f, Ui.MUTED), lp().margins(context, t = 2))
+                field(this, "Loan amount (₹) *  — max ${Fmt.inr(v.finalPrice)}", v.loanAmount, "Amount the customer will borrow", InputType.TYPE_CLASS_NUMBER, R.drawable.ic_rupee) {
                     v.loanAmount = it; loanRefresh?.invoke()
                 }
+                addView(error, lp().margins(context, t = 4))
+                addView(rateText, lp().margins(context, t = 6))
+                field(this, "PAN", v.pan, "ABCDE1234F", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS, maxLen = 10) { v.pan = it.uppercase() }
+                field(this, "Aadhaar", v.aadhaar, "12 digits", InputType.TYPE_CLASS_NUMBER, maxLen = 12) { v.aadhaar = it }
+                addView(text("Aadhaar prints only on the internal site visit report, never on the quotation.", 11.5f, Ui.MUTED), lp().margins(context, t = 6))
                 addView(text("Tenure", 13f, Ui.MUTED, bold = true), lp().margins(context, t = 12, b = 6))
                 v.loanYears = v.loanYears.coerceIn(1, Money.maxYears())
                 addView(chips((1..Money.maxYears()).map { "$it yr" + if (it > 1) "s" else "" }, "${v.loanYears} yr" + if (v.loanYears > 1) "s" else "") { picked ->
@@ -1055,7 +1057,7 @@ class VisitActivity : AppCompatActivity() {
                 addView(emiText)
                 addView(loanText)
                 addView(compare, lp().margins(context, t = 6))
-            })
+            }, lp().margins(this, t = 4))
         }
 
         // savings
@@ -1087,6 +1089,14 @@ class VisitActivity : AppCompatActivity() {
             }, lp().margins(context, t = 4))
         }, lp().margins(this, t = 10))
         refresh()
+    }
+
+    /** Why the Price step can't be left yet, or null. */
+    private fun fundingProblem(): String? = when {
+        v.funding.isBlank() -> "Choose the project funding: Own fund or Loan"
+        v.isLoan && (Fmt.parse(v.loanAmount) ?: 0.0) <= 0 -> "Enter the loan amount"
+        v.isLoan && Money.loanTooHigh(v) -> "Loan can't be more than the project cost of ${Fmt.inr(v.finalPrice)}"
+        else -> null
     }
 
     // ---------- step 5: finish ----------
