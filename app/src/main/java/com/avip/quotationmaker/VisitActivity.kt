@@ -293,6 +293,11 @@ class VisitActivity : AppCompatActivity() {
         if (step == 2 && (v.pkg?.price ?: 0.0) <= 0) { toast("Enter the price of the custom system"); return }
         if (step == 3) fundingProblem()?.let { toast(it); return }
         if (step == 4) {
+            if (v.leadStatus == "Converted" && v.installAt <= 0) {
+                toast("Pick the customer's desired installation date")
+                followUpCard?.let { c -> scroll.post { scroll.smoothScrollTo(0, c.top - dp(12)) } }
+                return
+            }
             if (v.leadStatus == "Open" && v.followUpAt <= 0) {
                 toast("Set the next follow-up date before creating the quotation")
                 followUpCard?.let { c -> scroll.post { scroll.smoothScrollTo(0, c.top - dp(12)) } }
@@ -1316,12 +1321,13 @@ class VisitActivity : AppCompatActivity() {
     private var followUpCard: View? = null
 
     private fun followUpSection() {
-        val title = sectionTitle("Follow-up", "Required while the lead is Open · reminder at 10:00 AM")
+        val title = sectionTitle(if (v.leadStatus == "Converted") "Converted — installation" else "Follow-up",
+            if (v.leadStatus == "Converted") "Pick the installation date the customer wants" else "Required while the lead is Open · reminder at 10:00 AM")
         followUpCard = title
         body.addView(title, lp().margins(this, t = 24, b = 10))
         body.addView(card {
             addView(text("Lead status", 13f, Ui.MUTED, bold = true), lp().margins(context, b = 6))
-            addView(chips(listOf("Open", "Converted", "Lost"), v.leadStatus, Ui.BLUE) { st ->
+            addView(chips(listOf("Open", "Converted"), v.leadStatus.takeIf { it != "Lost" } ?: "", Ui.BLUE) { st ->
                 v.leadStatus = st.ifBlank { "Open" }
                 if (v.leadStatus != "Open") Reminders.cancel(this@VisitActivity, v.number) else Reminders.schedule(this@VisitActivity, v)
                 save(); syncVisit(); render()
@@ -1342,7 +1348,19 @@ class VisitActivity : AppCompatActivity() {
                     v.followUpNote = it
                 }
             }
-            addView(horizontal {
+            if (v.leadStatus == "Converted") {
+                // no more follow-up calls: record when the customer wants the installation
+                addView(horizontal {
+                    addView(badge(R.drawable.ic_sun, if (v.installAt > 0) 0xFF2E7D32.toInt() else Ui.MUTED, 42))
+                    addView(vertical {
+                        addView(text(if (v.installAt > 0) dayFmt.format(java.util.Date(v.installAt)) else "No installation date", 15f, Ui.TEXT, bold = true))
+                        addView(text(if (v.installAt > 0) "Customer's desired installation date" else "Required — tap to pick the date", 12f,
+                            if (v.installAt > 0) Ui.MUTED else Ui.DANGER))
+                    }, lp(0, WRAP, 1f).margins(context, l = 10))
+                    addView(text(if (v.installAt > 0) "Change" else "Set date", 14f, Ui.BRAND, bold = true) { setPadding(dp(8), dp(8), dp(4), dp(8)) })
+                    setOnClickListener { pickInstallDate() }
+                }, lp().margins(context, t = 14))
+            } else addView(horizontal {
                 addView(pillButton("Call ${v.mobile}", Ui.BRAND, heightDp = 46, iconRes = R.drawable.ic_call) {
                     VisitStore.call(this@VisitActivity, v.mobile)
                 }, lp(0, WRAP, 1f).margins(context, r = 10))
@@ -1360,6 +1378,17 @@ class VisitActivity : AppCompatActivity() {
                 }
             }, lp().margins(this, t = 10))
         }
+    }
+
+    private fun pickInstallDate() {
+        val c = java.util.Calendar.getInstance()
+        if (v.installAt > 0) c.timeInMillis = v.installAt else c.add(java.util.Calendar.DAY_OF_MONTH, 7)
+        android.app.DatePickerDialog(this, { _, y, m, d ->
+            v.installAt = java.util.Calendar.getInstance().apply { set(y, m, d, 10, 0, 0) }.timeInMillis
+            save(); syncVisit(); render()
+        }, c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH), c.get(java.util.Calendar.DAY_OF_MONTH)).apply {
+            datePicker.minDate = System.currentTimeMillis() - 1000
+        }.show()
     }
 
     private fun pickFollowUpDate(onPicked: (Long) -> Unit) {

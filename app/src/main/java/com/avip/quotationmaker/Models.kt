@@ -264,6 +264,7 @@ class Visit(
     var followUpAt = 0L // reminder time (10 AM on the chosen day), 0 = none
     var followUpNote = ""
     var leadStatus = "Open" // Open / Converted / Lost
+    var installAt = 0L // customer's desired installation date (when Converted)
     val followUps = mutableListOf<FollowUp>()
 
     val isLoan get() = funding == "Loan"
@@ -293,7 +294,7 @@ class Visit(
         put("funding", funding); put("loanAmount", loanAmount); put("nameChange", nameChange); put("smartMeter", smartMeter); put("downPayment", downPayment); put("loanYears", loanYears)
         put("bankDocType", bankDocType); put("bankDocs", JSONArray(bankDocs))
         put("structureType", structureType); put("mountingLayout", mountingLayout); put("voiceNotes", JSONArray(voiceNotes)); put("videos", JSONArray(videos))
-        put("followUpAt", followUpAt); put("followUpNote", followUpNote); put("leadStatus", leadStatus)
+        put("followUpAt", followUpAt); put("followUpNote", followUpNote); put("leadStatus", leadStatus); put("installAt", installAt)
         put("followUps", JSONArray().apply { followUps.forEach { put(it.toJson()) } })
     }
 
@@ -327,6 +328,7 @@ class Visit(
             o.optJSONArray("videos")?.let { a -> for (i in 0 until a.length()) videos += a.optString(i) }
             followUpAt = o.optLong("followUpAt"); followUpNote = o.optString("followUpNote")
             leadStatus = o.optString("leadStatus", "Open").ifBlank { "Open" }
+            installAt = o.optLong("installAt")
             o.optJSONArray("followUps")?.let { a -> for (i in 0 until a.length()) followUps += FollowUp.fromJson(a.getJSONObject(i)) }
         }
     }

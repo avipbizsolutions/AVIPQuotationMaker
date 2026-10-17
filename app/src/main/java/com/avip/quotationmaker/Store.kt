@@ -184,6 +184,7 @@ object Remote {
             .put("notes", listOf(
                 when { v.nameCorrection -> "Name correction (free)"; v.nameTransferFee > 0 -> "Name transfer (+${v.nameTransferFee.toInt()})"; else -> "" },
                 if (v.smartMeter.isNotBlank()) "Smart meter: ${v.smartMeter}" else "",
+                if (v.leadStatus == "Converted" && v.installAt > 0) "Installation wanted: ${day.format(Date(v.installAt))}" else "",
                 v.siteNotes,
             ).filter { it.isNotBlank() }.joinToString(" | ")).put("voiceNotes", v.voiceNotes.size).put("photos", v.photos.size)
             .put("appVersion", Updater.currentVersionName(c))

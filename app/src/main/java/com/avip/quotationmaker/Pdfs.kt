@@ -91,6 +91,7 @@ class Pdfs(private val context: Context) {
             listOfNotNull(v.sanctionedLoad.takeIf { it.isNotBlank() }?.let { "Sanctioned load: $it kW" }, v.phase.takeIf { it.isNotBlank() },
                 v.smartMeter.takeIf { it.isNotBlank() }?.let { "Smart meter: $it" }).joinToString("  ·  "),
             v.funding.takeIf { it.isNotBlank() }?.let { "Funding: $it" } ?: "",
+            if (v.leadStatus == "Converted" && v.installAt > 0) "Installation date: ${dateFmt.format(Date(v.installAt))}" else "",
         ).filter { it.isNotBlank() }
         cust.forEach { ly = wrapText(it, margin + 10f, ly, half - 20f, paint(8.5f), 11f) }
 
@@ -561,6 +562,7 @@ class Pdfs(private val context: Context) {
 
         val follow = listOf(
             "Lead status" to v.leadStatus,
+            "Desired installation date" to (if (v.leadStatus == "Converted" && v.installAt > 0) dateFmt.format(Date(v.installAt)) else ""),
             "Next follow-up" to (if (v.followUpAt > 0 && v.leadStatus == "Open") dateFmt.format(Date(v.followUpAt)) + ", 10:00 AM" else ""),
             "Follow-up note" to v.followUpNote,
             "Voice notes" to (if (v.voiceNotes.isEmpty()) "" else "${v.voiceNotes.size} recording(s) — shared with this report"),
