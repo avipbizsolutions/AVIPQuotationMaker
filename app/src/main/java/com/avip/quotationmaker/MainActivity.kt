@@ -26,6 +26,21 @@ class MainActivity : AppCompatActivity() {
         content = vertical(16)
         root.addView(ScrollView(this).apply { addView(content) }, lp(MATCH, 0, 1f))
         setContentView(root)
+        checkUpdateInBackground()
+    }
+
+    private fun checkUpdateInBackground() {
+        lifecycleScope.launch {
+            val latest = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Updater.fetchLatest() } ?: return@launch
+            if (latest.versionCode <= Updater.currentVersionCode(this@MainActivity) || isFinishing) return@launch
+            androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                .setTitle("Update ready")
+                .setMessage("Version ${latest.versionName} of AVIP Surya Sales is available. Update now? It takes a few seconds.")
+                .setPositiveButton("Update") { _, _ ->
+                    startActivity(Intent(this@MainActivity, SplashActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+                .setNegativeButton("Later", null).show()
+        }
     }
 
     override fun onResume() {

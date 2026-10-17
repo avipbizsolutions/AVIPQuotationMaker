@@ -221,6 +221,7 @@ class Visit(
     var funding = "" // "Loan" or "Own fund"
     var nameChange = "" // "Not needed" / "Name correction" / "Name transfer"
     var downPayment = ""
+    var loanAmount = "" // asked at the customer step when funding is Loan (required)
     var loanYears = 10
     var bankDocType = "" // Bank statement / Passbook / Cancelled cheque
     val bankDocs = mutableListOf<String>()
@@ -284,7 +285,7 @@ class Visit(
         put("pkg", pkg?.toJson() ?: JSONObject.NULL); put("discount", discount); put("subsidyOn", subsidyOn)
         put("solarCapacityNote", solarCapacityNote)
         put("customerSign", customerSign); put("officerName", officerName); put("officerMobile", officerMobile)
-        put("funding", funding); put("nameChange", nameChange); put("downPayment", downPayment); put("loanYears", loanYears)
+        put("funding", funding); put("loanAmount", loanAmount); put("nameChange", nameChange); put("downPayment", downPayment); put("loanYears", loanYears)
         put("bankDocType", bankDocType); put("bankDocs", JSONArray(bankDocs))
         put("structureType", structureType); put("mountingLayout", mountingLayout); put("voiceNotes", JSONArray(voiceNotes))
         put("followUpAt", followUpAt); put("followUpNote", followUpNote); put("leadStatus", leadStatus)
@@ -312,7 +313,7 @@ class Visit(
             discount = o.optDouble("discount", 0.0); subsidyOn = o.optBoolean("subsidyOn", true)
             solarCapacityNote = o.optString("solarCapacityNote")
             customerSign = o.optString("customerSign"); officerName = o.optString("officerName"); officerMobile = o.optString("officerMobile")
-            funding = o.optString("funding"); nameChange = o.optString("nameChange"); downPayment = o.optString("downPayment"); loanYears = o.optInt("loanYears", 10)
+            funding = o.optString("funding"); loanAmount = o.optString("loanAmount"); nameChange = o.optString("nameChange"); downPayment = o.optString("downPayment"); loanYears = o.optInt("loanYears", 10)
             bankDocType = o.optString("bankDocType")
             o.optJSONArray("bankDocs")?.let { a -> for (i in 0 until a.length()) bankDocs += a.optString(i) }
             structureType = o.optString("structureType")
@@ -393,7 +394,11 @@ object Money {
     fun maxYears(): Int = Catalog.settings.num("loan_max_years", 10.0).toInt().coerceAtLeast(1)
 
     fun loanAmount(v: Visit): Double =
-        (v.finalPrice - (Fmt.parse(v.downPayment) ?: 0.0)).coerceAtLeast(0.0)
+        (Fmt.parse(v.loanAmount)?.takeIf { it > 0 }
+            ?: (v.finalPrice - (Fmt.parse(v.downPayment) ?: 0.0))).coerceAtLeast(0.0)
+
+    /** What the customer pays from own funds when taking a loan. */
+    fun downPayment(v: Visit): Double = (v.finalPrice - loanAmount(v)).coerceAtLeast(0.0)
 
     /** Monthly EMI on [principal] at the loan rate for [years]. */
     fun emi(principal: Double, years: Int): Double {

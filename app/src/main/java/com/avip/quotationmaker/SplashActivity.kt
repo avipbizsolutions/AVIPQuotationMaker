@@ -70,42 +70,46 @@ class SplashActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val root = vertical {
-            gravity = Gravity.CENTER
+            gravity = Gravity.CENTER_HORIZONTAL
             background = gradient(0f, Ui.BRAND_DARK, Ui.BRAND)
-            setPadding(dp(32), dp(32), dp(32), dp(32))
+            setPadding(dp(24), dp(40), dp(24), dp(28))
         }
+        // logo card across the top
+        root.addView(android.widget.FrameLayout(this).apply {
+            background = rounded(Color.WHITE, dpf(20f))
+            elevation = dpf(6f)
+            setPadding(dp(24), dp(18), dp(24), dp(18))
+            addView(ImageView(context).apply {
+                setImageResource(R.drawable.avip_solar_logo)
+                adjustViewBounds = true
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }, android.widget.FrameLayout.LayoutParams(MATCH, WRAP, Gravity.CENTER))
+        }, lp(MATCH, WRAP))
+        root.addView(View(this), lp(MATCH, 0, 1f))
         val brandBlock = vertical {
             gravity = Gravity.CENTER_HORIZONTAL
-            addView(android.widget.FrameLayout(context).apply {
-                background = rounded(Color.WHITE, dpf(22f))
-                elevation = dpf(6f)
-                setPadding(dp(22), dp(18), dp(22), dp(18))
-                addView(ImageView(context).apply {
-                    setImageResource(R.drawable.avip_solar_logo)
-                    adjustViewBounds = true
-                }, android.widget.FrameLayout.LayoutParams(dp(230), WRAP))
-            }, lp(WRAP, WRAP))
-            addView(text("AVIP Surya Sales", 26f, Color.WHITE, bold = true) { gravity = Gravity.CENTER }, lp(WRAP, WRAP).margins(context, t = 18))
+            addView(text("AVIP Surya Sales", 28f, Color.WHITE, bold = true) { gravity = Gravity.CENTER }, lp(WRAP, WRAP))
             addView(text("Site visit to quotation, right at the customer's home", 14f, 0xDDFFFFFF.toInt()) { gravity = Gravity.CENTER }, lp(WRAP, WRAP).margins(context, t = 6))
             addView(text("by AVIP Business Solutions LLP", 12f, Ui.SUN, bold = true) { gravity = Gravity.CENTER }, lp(WRAP, WRAP).margins(context, t = 4))
         }
         root.addView(brandBlock)
+        root.addView(View(this), lp(MATCH, 0, 1f))
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             isIndeterminate = true
             progressTintList = android.content.res.ColorStateList.valueOf(Ui.SUN)
             indeterminateTintList = android.content.res.ColorStateList.valueOf(Ui.SUN)
             max = 100
         }
-        root.addView(progress, lp(dp(200), WRAP).margins(this, t = 36))
+        root.addView(progress, lp(dp(200), WRAP))
         status = text("Loading latest prices…", 13f, 0xDDFFFFFF.toInt()) { gravity = Gravity.CENTER }
         root.addView(status, lp(WRAP, WRAP).margins(this, t = 10))
         retry = pillButton("Retry", Ui.SUN, Ui.TEXT) { start() }.apply { visibility = View.GONE }
         root.addView(retry, lp(dp(160), WRAP).margins(this, t = 16))
-        root.addView(text("v" + Updater.currentVersionName(this), 11f, 0x99FFFFFF.toInt()), lp(WRAP, WRAP).margins(this, t = 28))
+        root.addView(text("v" + Updater.currentVersionName(this), 11f, 0x99FFFFFF.toInt()), lp(WRAP, WRAP).margins(this, t = 16))
         setContentView(root)
 
         brandBlock.alpha = 0f
-        brandBlock.animate().alpha(1f).setDuration(450).start()
+        brandBlock.animate().alpha(1f).setDuration(300).start()
 
         ContextCompat.registerReceiver(
             this, installStatusReceiver, IntentFilter(Updater.ACTION_INSTALL_STATUS),
@@ -131,9 +135,12 @@ class SplashActivity : AppCompatActivity() {
         val hadCache = Catalog.isLoaded || Catalog.loadCached(this)
 
         lifecycleScope.launch {
-            val minimum = async { delay(1200) }
-            val update = async { withTimeoutOrNull(5000) { withContext(Dispatchers.IO) { Updater.fetchLatest() } } }
-            val fresh = withTimeoutOrNull(10000) { Catalog.refresh(this@SplashActivity) } ?: false
+            val minimum = async { delay(700) }
+            // with saved prices, open within 2 s; fresh prices keep loading in the background
+            val wait = if (hadCache) 1900L else 10000L
+            val update = async { withTimeoutOrNull(minOf(wait, 1800L)) { withContext(Dispatchers.IO) { Updater.fetchLatest() } } }
+            val refresh = AppScope.async { Catalog.refresh(applicationContext) }
+            val fresh = withTimeoutOrNull(wait) { refresh.await() } ?: false
             Remote.flushAsync(this@SplashActivity)
 
             val latest = update.await()
@@ -152,7 +159,6 @@ class SplashActivity : AppCompatActivity() {
                 retry.visibility = View.VISIBLE
                 return@launch
             }
-            if (!fresh) toast("Offline: showing prices saved earlier")
             goNext()
         }
     }

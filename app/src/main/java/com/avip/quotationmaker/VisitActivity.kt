@@ -217,6 +217,7 @@ class VisitActivity : AppCompatActivity() {
         if (step == 0) {
             if (v.name.isBlank()) { toast("Enter the customer's name"); return }
             if (v.mobile.filter { it.isDigit() }.length < 10) { toast("Enter a 10-digit WhatsApp number"); return }
+            if (v.isLoan && (Fmt.parse(v.loanAmount) ?: 0.0) <= 0) { toast("Enter the loan amount"); return }
         }
         if (step == 2 && v.pkg == null) { toast("Pick a system first"); return }
         if (step == 2 && (v.pkg?.price ?: 0.0) <= 0) { toast("Enter the price of the custom system"); return }
@@ -234,6 +235,7 @@ class VisitActivity : AppCompatActivity() {
     private fun go(to: Int) {
         if (to < 0) { leave(); return }
         if (to > 0 && v.name.isBlank()) { toast("Enter the customer's name first"); step = 0; render(); return }
+        if (to > 0 && step == 0 && v.isLoan && (Fmt.parse(v.loanAmount) ?: 0.0) <= 0) { toast("Enter the loan amount"); return }
         if (to >= 3 && v.pkg == null) { toast("Pick a system first"); step = 2; render(); return }
         savePads(); save()
         step = to.coerceIn(0, 4)
@@ -346,6 +348,7 @@ class VisitActivity : AppCompatActivity() {
                     addView(text("KYC for the solar loan", 14f, Ui.TEXT, bold = true), lp(0, WRAP, 1f).margins(context, l = 6))
                 })
                 addView(text("Loan @ ${Fmt.num(Money.loanRate())}% for up to ${Money.maxYears()} years", 12f, Ui.MUTED), lp().margins(context, t = 2))
+                field(this, "Loan amount (₹) *", v.loanAmount, "Amount the customer will borrow", InputType.TYPE_CLASS_NUMBER, R.drawable.ic_rupee) { v.loanAmount = it }
                 field(this, "PAN", v.pan, "ABCDE1234F", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS, maxLen = 10) { v.pan = it.uppercase() }
                 field(this, "Aadhaar", v.aadhaar, "12 digits", InputType.TYPE_CLASS_NUMBER, maxLen = 12) { v.aadhaar = it }
                 addView(text("Aadhaar prints only on the internal site visit report, never on the quotation.", 11.5f, Ui.MUTED), lp().margins(context, t = 6))
@@ -907,14 +910,15 @@ class VisitActivity : AppCompatActivity() {
                 val amt = Money.loanAmount(v)
                 val emi = Money.emi(v)
                 emiText.text = "${Fmt.inr(emi)} / month"
-                loanText.text = "Loan ${Fmt.inr(amt)} @ ${Fmt.num(Money.loanRate())}% for ${v.loanYears} yrs · interest ${Fmt.inr(emi * v.loanYears * 12 - amt)}"
+                loanText.text = "Loan ${Fmt.inr(amt)} @ ${Fmt.num(Money.loanRate())}% for ${v.loanYears} yrs · interest ${Fmt.inr(emi * v.loanYears * 12 - amt)}" +
+                    "\nCustomer's own contribution ${Fmt.inr(Money.downPayment(v))}"
                 val save = Money.yearlySaving(p) / 12
                 compare.text = if (emi > 0 && save > 0) "Bill saving ${Fmt.inr(save)}/month covers ${((save / emi) * 100).roundToInt().coerceAtMost(999)}% of the EMI" else ""
             }
             body.addView(sectionTitle("Solar loan", "Interest ${Fmt.num(Money.loanRate())}% · up to ${Money.maxYears()} years"), lp().margins(this, t = 20, b = 10))
             body.addView(card {
-                field(this, "Down payment by customer (₹)", v.downPayment, "0", InputType.TYPE_CLASS_NUMBER, R.drawable.ic_rupee) {
-                    v.downPayment = it; loanRefresh?.invoke()
+                field(this, "Loan amount (₹) *", v.loanAmount, "Amount the customer will borrow", InputType.TYPE_CLASS_NUMBER, R.drawable.ic_rupee) {
+                    v.loanAmount = it; loanRefresh?.invoke()
                 }
                 addView(text("Tenure", 13f, Ui.MUTED, bold = true), lp().margins(context, t = 12, b = 6))
                 v.loanYears = v.loanYears.coerceIn(1, Money.maxYears())

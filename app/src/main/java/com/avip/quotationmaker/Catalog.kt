@@ -165,6 +165,11 @@ object Catalog {
     }
 }
 
+/** Work that may outlive a screen, such as a price refresh started on the launch screen. */
+object AppScope : kotlinx.coroutines.CoroutineScope by kotlinx.coroutines.CoroutineScope(
+    kotlinx.coroutines.SupervisorJob() + Dispatchers.Main,
+)
+
 /** Minimal RFC-4180 CSV reader (quotes, escaped quotes, newlines inside cells). */
 object Csv {
     fun parse(text: String): List<List<String>> {

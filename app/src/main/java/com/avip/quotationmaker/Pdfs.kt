@@ -419,7 +419,7 @@ class Pdfs(private val context: Context) {
         canvas.drawText("for $months months", margin + 12f, top + 46f, paint(7.5f, muted))
         val cols = listOf(
             "Loan amount" to Fmt.inr(amt),
-            "Down payment" to Fmt.inr((Fmt.parse(v.downPayment) ?: 0.0).coerceAtLeast(0.0)),
+            "Own contribution" to Fmt.inr(Money.downPayment(v)),
             "Interest rate" to "${Fmt.num(Money.loanRate())}% p.a.",
             "Total interest" to Fmt.inr(emi * months - amt),
         )
