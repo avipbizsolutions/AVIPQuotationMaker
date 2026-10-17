@@ -198,11 +198,12 @@ object Remote {
     /** PDFs and voice notes go to the office Google Drive (one folder per visit). Sent one by one. */
     fun queueFiles(c: Context, v: Visit) {
         val files = listOf(VisitStore.quotationPdf(c, v), VisitStore.reportPdf(c, v)) +
-            v.voiceNotes.map { VisitStore.file(c, v, it) }
+            v.voiceNotes.map { VisitStore.file(c, v, it) } +
+            v.videos.map { VisitStore.file(c, v, it) }.filter { it.length() <= 12_000_000L } // big videos: share by hand
         files.filter { it.exists() }.forEach { f ->
             queue(c, JSONObject().put("kind", "file").put("number", v.number).put("customer", v.name)
                 .put("officer", v.officerName).put("name", f.name).put("path", f.absolutePath)
-                .put("mime", if (f.name.endsWith(".pdf")) "application/pdf" else "audio/mp4"))
+                .put("mime", when { f.name.endsWith(".pdf") -> "application/pdf"; f.name.startsWith("video_") -> "video/mp4"; else -> "audio/mp4" }))
         }
     }
 

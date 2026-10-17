@@ -60,4 +60,10 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+    // GPS camera for site photos (same as AVIP GPSCam)
+    val camerax = "1.3.4"
+    implementation("androidx.camera:camera-core:$camerax")
+    implementation("androidx.camera:camera-camera2:$camerax")
+    implementation("androidx.camera:camera-lifecycle:$camerax")
+    implementation("androidx.camera:camera-view:$camerax")
 }

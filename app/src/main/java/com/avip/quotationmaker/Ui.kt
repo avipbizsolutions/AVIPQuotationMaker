@@ -225,7 +225,10 @@ fun Context.tiles(
                 isClickable = true
                 foreground = context.ripple()
                 addView(icon(res, color, 30))
-                addView(text(label, 13f, Ui.TEXT, bold = true) { gravity = Gravity.CENTER }, lp(MATCH, WRAP).margins(context, t = 6))
+                addView(text(label, if (columns >= 4) 12.5f else 13f, Ui.TEXT, bold = true) {
+                    gravity = Gravity.CENTER
+                    if (columns >= 4) setLines(2) // equal heights even when one label wraps
+                }, lp(MATCH, WRAP).margins(context, t = 6))
                 setOnClickListener { current = label; paint(); onPick(label) }
             }
             views += tile to label

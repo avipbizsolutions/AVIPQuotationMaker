@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
 
@@ -23,6 +24,9 @@
         </intent>
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.VIDEO_CAPTURE" />
         </intent>
     </queries>
 
@@ -59,6 +63,11 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
         <activity android:name=".PriceListActivity" android:exported="false" />
+        <activity
+            android:name=".GeoCamActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.Quote.Splash" />
         <activity
             android:name=".SketchActivity"
             android:exported="false"

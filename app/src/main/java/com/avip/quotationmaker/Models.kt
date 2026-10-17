@@ -240,6 +240,7 @@ class Visit(
     var structureType = "" // "Magnelis" or "Normal GI"
     var mountingLayout = "" // Magnelis: "2P × 3" / "2P × 4" / "2P × 5"
     val voiceNotes = mutableListOf<String>()
+    val videos = mutableListOf<String>()
     val photos = mutableListOf<String>() // file names inside the visit folder
     var sketch = "" // file name of the site sketch
     val structure: MutableList<StructurePart> = StructurePart.NAMES.map { StructurePart(it) }.toMutableList()
@@ -287,7 +288,7 @@ class Visit(
         put("customerSign", customerSign); put("officerName", officerName); put("officerMobile", officerMobile)
         put("funding", funding); put("loanAmount", loanAmount); put("nameChange", nameChange); put("downPayment", downPayment); put("loanYears", loanYears)
         put("bankDocType", bankDocType); put("bankDocs", JSONArray(bankDocs))
-        put("structureType", structureType); put("mountingLayout", mountingLayout); put("voiceNotes", JSONArray(voiceNotes))
+        put("structureType", structureType); put("mountingLayout", mountingLayout); put("voiceNotes", JSONArray(voiceNotes)); put("videos", JSONArray(videos))
         put("followUpAt", followUpAt); put("followUpNote", followUpNote); put("leadStatus", leadStatus)
         put("followUps", JSONArray().apply { followUps.forEach { put(it.toJson()) } })
     }
@@ -319,6 +320,7 @@ class Visit(
             structureType = o.optString("structureType")
             mountingLayout = o.optString("mountingLayout")
             o.optJSONArray("voiceNotes")?.let { a -> for (i in 0 until a.length()) voiceNotes += a.optString(i) }
+            o.optJSONArray("videos")?.let { a -> for (i in 0 until a.length()) videos += a.optString(i) }
             followUpAt = o.optLong("followUpAt"); followUpNote = o.optString("followUpNote")
             leadStatus = o.optString("leadStatus", "Open").ifBlank { "Open" }
             o.optJSONArray("followUps")?.let { a -> for (i in 0 until a.length()) followUps += FollowUp.fromJson(a.getJSONObject(i)) }

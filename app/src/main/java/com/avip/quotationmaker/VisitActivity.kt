@@ -13,6 +13,7 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Bundle
+import android.provider.MediaStore
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
@@ -195,7 +196,7 @@ class VisitActivity : AppCompatActivity() {
 
     private fun leave() {
         savePads(); save()
-        if (v.name.isBlank() && v.mobile.isBlank() && v.photos.isEmpty() && v.pkg == null && v.voiceNotes.isEmpty()) VisitStore.delete(this, v)
+        if (v.name.isBlank() && v.mobile.isBlank() && v.photos.isEmpty() && v.videos.isEmpty() && v.pkg == null && v.voiceNotes.isEmpty()) VisitStore.delete(this, v)
         finish()
     }
 
@@ -363,26 +364,7 @@ class VisitActivity : AppCompatActivity() {
     // ---------- step 2: site ----------
 
     private fun siteStep() {
-        stepHeader("Site survey", "Location, roof, photos and structure")
-
-        // location
-        body.addView(card {
-            addView(horizontal {
-                addView(badge(R.drawable.ic_location, if (v.hasLocation) Ui.BRAND else if (locating) Ui.SUN else Ui.MUTED, 42))
-                addView(vertical {
-                    addView(text(when { v.hasLocation -> "Site location tagged"; locating -> "Getting location…"; else -> "Site location not tagged" }, 15f, Ui.TEXT, bold = true))
-                    addView(text(when {
-                        v.hasLocation -> String.format(java.util.Locale.US, "%.6f, %.6f", v.lat, v.lng)
-                        locating -> "Captured automatically — keep Location (GPS) on"
-                        else -> "Turn on Location, then tap Capture"
-                    }, 12.5f, Ui.MUTED))
-                }, lp(0, WRAP, 1f).margins(context, l = 12))
-            })
-            addView(horizontal {
-                addView(pillButton(if (v.hasLocation) "Re-capture" else "Capture GPS", heightDp = 42, iconRes = R.drawable.ic_location) { askLocation() }, lp(0, WRAP, 1f))
-                if (v.hasLocation) addView(pillButton("Map", Ui.BRAND_LIGHT, Ui.BRAND_DARK, 42) { VisitStore.openMap(this@VisitActivity, v.lat, v.lng) }, lp(WRAP, WRAP).margins(context, l = 10))
-            }, lp().margins(context, t = 12))
-        })
+        stepHeader("Site survey", "Roof, photos, videos and structure · location is tagged automatically")
 
         // roof
         body.addView(sectionTitle("Roof"), lp().margins(this, t = 20, b = 10))
@@ -427,8 +409,12 @@ class VisitActivity : AppCompatActivity() {
         updateArea()
 
         // photos
-        body.addView(sectionTitle("Site photos", "Roof, meter, inverter wall, access stairs"), lp().margins(this, t = 20, b = 10))
+        body.addView(sectionTitle("Site photos", "GPS stamped like AVIP GPSCam: map, address, lat/long, time, direction"), lp().margins(this, t = 20, b = 10))
         body.addView(photoGrid(v.photos, bank = false))
+
+        // videos
+        body.addView(sectionTitle("Site videos", "Walk-around of roof and meter (not GPS stamped)"), lp().margins(this, t = 20, b = 10))
+        body.addView(videoGrid())
 
         // sketch (landscape, full screen)
         body.addView(sectionTitle("Site sketch", "Roof outline, obstacles and panel rows — drawn sideways for more room"), lp().margins(this, t = 20, b = 10))
@@ -544,15 +530,155 @@ class VisitActivity : AppCompatActivity() {
 
     private fun addPhoto(bank: Boolean) {
         photoToBank = bank
+        if (!bank) {
+            // site photos always come from the GPS camera so they carry the location stamp
+            geoCam.launch(Intent(this, GeoCamActivity::class.java)
+                .putExtra(GeoCamActivity.EXTRA_DIR, VisitStore.dir(this, v.number).absolutePath)
+                .putStringArrayListExtra(GeoCamActivity.EXTRA_LINES, arrayListOf(
+                    listOf(v.name, v.district).filter { it.isNotBlank() }.joinToString(", ").let { if (it.isBlank()) "" else "Customer: $it" },
+                    "Site visit ${v.number} · ${v.officerName.ifBlank { Officer.name(this) }}",
+                )))
+            return
+        }
         AlertDialog.Builder(this).setTitle(if (bank) "Add bank proof photo" else "Add site photo")
             .setItems(arrayOf("Take photo with camera", "Choose from gallery")) { _, which ->
-                if (which == 0) {
+                if (which == 0) withCamera {
                     val f = VisitStore.file(this, v, (if (bank) "bank_" else "photo_") + "${System.currentTimeMillis()}.jpg")
                     pendingPhoto = f
                     try { takePhoto.launch(VisitStore.uri(this, f)) } catch (_: Exception) { toast("Camera not available") }
                 } else pickPhoto.launch("image/*")
             }.show()
     }
+
+    // ---------- camera permission, GPS camera results, videos ----------
+
+    private var afterCameraPermission: (() -> Unit)? = null
+    private val cameraPerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        val next = afterCameraPermission
+        afterCameraPermission = null
+        if (ok) next?.invoke() else toast("Camera permission is needed")
+    }
+
+    /** The app declares the camera permission, so the phone's camera apps need it granted too. */
+    private fun withCamera(block: () -> Unit) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) block()
+        else { afterCameraPermission = block; cameraPerm.launch(Manifest.permission.CAMERA) }
+    }
+
+    private val geoCam = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        val data = r.data ?: return@registerForActivityResult
+        val files = data.getStringArrayListExtra(GeoCamActivity.EXTRA_FILES) ?: arrayListOf()
+        v.photos.addAll(files.filter { it !in v.photos })
+        if (!v.hasLocation && data.hasExtra(GeoCamActivity.EXTRA_LAT)) {
+            v.lat = data.getDoubleExtra(GeoCamActivity.EXTRA_LAT, 0.0)
+            v.lng = data.getDoubleExtra(GeoCamActivity.EXTRA_LNG, 0.0)
+        }
+        save(); render()
+    }
+
+    private var pendingVideo: File? = null
+    private val recordVideo = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        val f = pendingVideo ?: return@registerForActivityResult
+        pendingVideo = null
+        if (r.resultCode == RESULT_OK && f.exists() && f.length() > 0) { v.videos += f.name; save(); render() } else f.delete()
+    }
+    private val pickVideo = registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isNullOrEmpty()) return@registerForActivityResult
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                uris.take(5).forEach { u ->
+                    try {
+                        val f = VisitStore.file(this@VisitActivity, v, "video_${System.currentTimeMillis()}_${(0..999).random()}.mp4")
+                        contentResolver.openInputStream(u)?.use { input -> f.outputStream().use { input.copyTo(it) } }
+                        if (f.length() > 0) v.videos += f.name else f.delete()
+                    } catch (_: Exception) {}
+                }
+            }
+            save(); render()
+        }
+    }
+
+    private fun addVideo() {
+        AlertDialog.Builder(this).setTitle("Add site video")
+            .setItems(arrayOf("Record video", "Choose from gallery")) { _, which ->
+                if (which == 0) withCamera {
+                    val f = VisitStore.file(this, v, "video_${System.currentTimeMillis()}.mp4")
+                    pendingVideo = f
+                    val i = Intent(MediaStore.ACTION_VIDEO_CAPTURE)
+                        .putExtra(MediaStore.EXTRA_OUTPUT, VisitStore.uri(this, f))
+                        .putExtra(MediaStore.EXTRA_DURATION_LIMIT, 120)
+                        .putExtra(MediaStore.EXTRA_VIDEO_QUALITY, 1)
+                        .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    try { recordVideo.launch(i) } catch (_: Exception) { toast("No camera app found for video") }
+                } else pickVideo.launch("video/*")
+            }.show()
+    }
+
+    private fun videoGrid(): View {
+        val box = vertical { }
+        val items: List<String?> = v.videos.toList() + listOf(null)
+        items.chunked(3).forEach { row ->
+            box.addView(horizontal {
+                row.forEach { name ->
+                    val cell = FrameLayout(context).apply {
+                        background = rounded(if (name == null) 0xFFEAF1FB.toInt() else Color.BLACK, dpf(14f), Ui.LINE, dp(1))
+                        clipToOutline = true
+                    }
+                    if (name == null) {
+                        cell.addView(vertical {
+                            gravity = Gravity.CENTER
+                            addView(icon(R.drawable.ic_video, Ui.BLUE, 32))
+                            addView(text("Add video", 12.5f, Ui.BLUE, bold = true), lp(WRAP, WRAP).margins(context, t = 4))
+                        }, FrameLayout.LayoutParams(MATCH, MATCH))
+                        cell.setOnClickListener { addVideo() }
+                    } else {
+                        val f = VisitStore.file(context, v, name)
+                        cell.addView(ImageView(context).apply {
+                            scaleType = ImageView.ScaleType.CENTER_CROP
+                            videoThumb(f)?.let { setImageBitmap(it) }
+                        }, FrameLayout.LayoutParams(MATCH, MATCH))
+                        cell.addView(ImageView(context).apply {
+                            setImageResource(R.drawable.ic_play)
+                            imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+                            background = circle(0x88000000.toInt())
+                            setPadding(dp(8), dp(8), dp(8), dp(8))
+                        }, FrameLayout.LayoutParams(dp(40), dp(40), Gravity.CENTER))
+                        cell.addView(text("${f.length() / (1024 * 1024)} MB", 11f, Color.WHITE, bold = true) {
+                            setShadowLayer(4f, 0f, 0f, Color.BLACK)
+                        }, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.BOTTOM or Gravity.START).apply { setMargins(dp(8), 0, 0, dp(6)) })
+                        cell.addView(ImageView(context).apply {
+                            setImageResource(R.drawable.ic_close)
+                            imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+                            background = circle(0x99000000.toInt())
+                            setPadding(dp(5), dp(5), dp(5), dp(5))
+                            setOnClickListener {
+                                AlertDialog.Builder(this@VisitActivity).setTitle("Remove this video?")
+                                    .setPositiveButton("Remove") { _, _ -> f.delete(); v.videos.remove(name); save(); render() }
+                                    .setNegativeButton("Cancel", null).show()
+                            }
+                        }, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.TOP or Gravity.END).apply { setMargins(0, dp(6), dp(6), 0) })
+                        cell.setOnClickListener {
+                            try {
+                                startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(VisitStore.uri(this@VisitActivity, f), "video/*")
+                                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                            } catch (_: Exception) { toast("No video player found") }
+                        }
+                    }
+                    addView(cell, lp(0, dp(104), 1f).margins(context, r = 8))
+                }
+                repeat(3 - row.size) { addView(View(context), lp(0, 1, 1f).margins(context, r = 8)) }
+            }, lp().margins(this, b = 8))
+        }
+        return box
+    }
+
+    private fun videoThumb(f: File): Bitmap? = try {
+        val m = android.media.MediaMetadataRetriever()
+        m.setDataSource(f.absolutePath)
+        val frame = m.getFrameAtTime(1_000_000)
+        m.release()
+        frame?.let { Bitmap.createScaledBitmap(it, 240, (240f * it.height / it.width).toInt().coerceAtLeast(1), true) }
+    } catch (_: Exception) { null }
 
     // ---------- voice notes ----------
 
@@ -984,7 +1110,7 @@ class VisitActivity : AppCompatActivity() {
             val sub = Money.subsidy(p, v.subsidyOn)
             if (sub > 0) addView(kv("After subsidy", Fmt.inr(v.finalPrice - sub)))
             if (v.funding.isNotBlank()) addView(kv("Funding", if (v.isLoan) "Loan · EMI ${Fmt.inr(Money.emi(v))} × ${v.loanYears * 12}" else v.funding))
-            addView(kv("Photos · voice notes", "${v.photos.size} · ${v.voiceNotes.size}"))
+            addView(kv("Photos · videos · voice", "${v.photos.size} · ${v.videos.size} · ${v.voiceNotes.size}"))
             if (v.bankDocs.isNotEmpty()) addView(kv("Bank proof", "${v.bankDocType.ifBlank { "Photo" }} (${v.bankDocs.size})"))
         })
 
@@ -1004,7 +1130,8 @@ class VisitActivity : AppCompatActivity() {
                 }, lp(0, WRAP, 1f))
             }, lp().margins(this, t = 10))
             body.addView(pillButton("Share PDFs + voice notes (office)", Ui.BRAND_LIGHT, Ui.BRAND_DARK, 46, R.drawable.ic_share) {
-                val files = listOf(q, r).filter { it.exists() } + v.voiceNotes.map { VisitStore.file(this, v, it) }.filter { it.exists() }
+                val files = listOf(q, r).filter { it.exists() } +
+                    (v.voiceNotes + v.videos).map { VisitStore.file(this, v, it) }.filter { it.exists() }
                 VisitStore.share(this, files, "Site visit ${v.number} — ${v.name}, ${v.district}")
             }, lp().margins(this, t = 10))
             body.addView(text("Changed something? Go back to any step, then tap Re-create PDFs.", 12f, Ui.MUTED) { gravity = Gravity.CENTER }, lp().margins(this, t = 12, b = 4))

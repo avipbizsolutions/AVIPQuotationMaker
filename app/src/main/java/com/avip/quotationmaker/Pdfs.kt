@@ -562,6 +562,7 @@ class Pdfs(private val context: Context) {
             "Next follow-up" to (if (v.followUpAt > 0 && v.leadStatus == "Open") dateFmt.format(Date(v.followUpAt)) + ", 10:00 AM" else ""),
             "Follow-up note" to v.followUpNote,
             "Voice notes" to (if (v.voiceNotes.isEmpty()) "" else "${v.voiceNotes.size} recording(s) — shared with this report"),
+            "Site videos" to (if (v.videos.isEmpty()) "" else "${v.videos.size} video(s) — shared with this report"),
         ).filter { it.second.isNotBlank() }
         if (follow.size > 1) { heading("Follow-up"); grid(follow) }
 
