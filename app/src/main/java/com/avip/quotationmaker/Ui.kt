@@ -199,6 +199,8 @@ fun Context.chips(options: List<String>, selected: String, color: Int = Ui.BRAND
     return HorizontalScrollView(this).apply {
         isHorizontalScrollBarEnabled = false
         addView(row)
+        // lets code select a chip later without rebuilding the screen
+        tag = { value: String -> current = value; paint() }
     }
 }
 

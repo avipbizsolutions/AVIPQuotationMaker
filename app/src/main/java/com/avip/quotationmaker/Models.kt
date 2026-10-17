@@ -331,6 +331,32 @@ class Visit(
     }
 }
 
+/** Which Bihar DISCOM serves a place: NBPDCL north of the Ganga, SBPDCL south. */
+object Discom {
+    private val NORTH = listOf(
+        "west champaran", "pashchim champaran", "bettiah", "east champaran", "purba champaran", "purvi champaran", "motihari",
+        "sitamarhi", "sheohar", "muzaffarpur", "vaishali", "hajipur", "saran", "chapra", "chhapra", "siwan", "gopalganj", "gopalgunj",
+        "madhubani", "darbhanga", "darbhanaga", "samastipur", "begusarai", "khagaria", "saharsa", "supaul", "madhepura",
+        "araria", "katihar", "purnia", "purnea", "kishanganj",
+    )
+    private val SOUTH = listOf(
+        "patna", "nalanda", "bihar sharif", "biharsharif", "gaya", "bhagalpur", "lakhisarai", "jehanabad", "aurangabad", "buxar",
+        "bhojpur", "arrah", "ara", "rohtas", "sasaram", "arwal", "munger", "monghyr", "banka", "nawada", "sheikhpura", "jamui",
+        "kaimur", "bhabua",
+    )
+
+    /** "NBPDCL", "SBPDCL", or "" when the place is outside Bihar or unknown. Checks the most specific text first. */
+    fun of(vararg places: String?): String {
+        for (p in places) {
+            val t = p?.lowercase()?.replace(" district", "")?.replace(" division", "")?.trim() ?: continue
+            if (t.isBlank()) continue
+            NORTH.firstOrNull { t == it || t.contains(it) }?.let { return "NBPDCL" }
+            SOUTH.firstOrNull { t == it || (it.length > 3 && t.contains(it)) }?.let { return "SBPDCL" }
+        }
+        return ""
+    }
+}
+
 /** One follow-up call: when, what happened, and any note. */
 data class FollowUp(val at: Long, val outcome: String, val note: String, val nextAt: Long) {
     fun toJson(): JSONObject = JSONObject().put("at", at).put("outcome", outcome).put("note", note).put("nextAt", nextAt)

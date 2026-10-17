@@ -164,7 +164,7 @@ class VisitActivity : AppCompatActivity() {
         render()
         // tag the site automatically: the executive is standing at the customer's home
         if (!v.hasLocation && !v.isQuoted) autoLocate()
-        else if (v.hasLocation && v.address.isBlank() && !v.isQuoted) fillAddress(force = false)
+        else if (v.hasLocation && (v.address.isBlank() || v.discom.isBlank()) && !v.isQuoted) fillAddress(force = false)
     }
 
     // ---------- address from GPS (fields stay editable) ----------
@@ -172,6 +172,7 @@ class VisitActivity : AppCompatActivity() {
     private var addressField: android.widget.EditText? = null
     private var districtField: android.widget.EditText? = null
     private var pinField: android.widget.EditText? = null
+    private var discomChips: View? = null
     private var gettingAddress = false
     private var forceAddress = false
 
@@ -221,6 +222,13 @@ class VisitActivity : AppCompatActivity() {
             if ((force || v.address.isBlank()) && line.isNotBlank()) { v.address = line; addressField?.setText(line) }
             if ((force || v.district.isBlank()) && district.isNotBlank()) { v.district = district; districtField?.setText(district) }
             if ((force || v.pincode.isBlank()) && pin.isNotBlank()) { v.pincode = pin; pinField?.setText(pin) }
+            // DISCOM from the district: NBPDCL north of the Ganga, SBPDCL south
+            val discom = Discom.of(a.subAdminArea, district, a.locality, a.getAddressLine(0))
+            if ((force || v.discom.isBlank()) && discom.isNotBlank()) {
+                v.discom = discom
+                @Suppress("UNCHECKED_CAST")
+                (discomChips?.tag as? (String) -> Unit)?.invoke(discom)
+            }
             save()
             if (force) toast("Address filled from GPS — edit if needed")
         }
@@ -317,7 +325,7 @@ class VisitActivity : AppCompatActivity() {
     // ---------- rendering ----------
 
     private fun render() {
-        addressField = null; districtField = null; pinField = null
+        addressField = null; districtField = null; pinField = null; discomChips = null
         savePads() // keep a sketch / signature in progress when the screen is rebuilt
         renderStepBar()
         body.removeAllViews()
@@ -390,7 +398,9 @@ class VisitActivity : AppCompatActivity() {
         body.addView(sectionTitle("Electricity connection", "Helps pick the right system size"), lp().margins(this, t = 20, b = 10))
         body.addView(card {
             addView(text("DISCOM", 13f, Ui.MUTED, bold = true), lp().margins(context, b = 6))
-            addView(chips(listOf("NBPDCL", "SBPDCL"), v.discom) { v.discom = it })
+            discomChips = chips(listOf("NBPDCL", "SBPDCL"), v.discom) { v.discom = it }
+            addView(discomChips)
+            addView(text("Picked from the GPS location — tap the other one if it's wrong", 11.5f, Ui.MUTED), lp().margins(context, t = 4))
             field(this, "Consumer / CA number", v.caNo, "From the bill", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS, R.drawable.ic_bolt) { v.caNo = it }
             addView(text("Connection", 13f, Ui.MUTED, bold = true), lp().margins(context, t = 12, b = 6))
             addView(chips(listOf("Single phase", "Three phase"), v.phase) { v.phase = it })
