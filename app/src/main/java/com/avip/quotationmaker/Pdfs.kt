@@ -88,10 +88,8 @@ class Pdfs(private val context: Context) {
             "WhatsApp: ${v.mobile}",
             listOf(v.address, v.district, v.pincode).filter { it.isNotBlank() }.joinToString(", "),
             listOfNotNull(v.caNo.takeIf { it.isNotBlank() }?.let { "CA No: $it" }, v.discom.takeIf { it.isNotBlank() }).joinToString("  ·  "),
-            listOfNotNull(v.sanctionedLoad.takeIf { it.isNotBlank() }?.let { "Sanctioned load: $it kW" }, v.phase.takeIf { it.isNotBlank() },
-                v.smartMeter.takeIf { it.isNotBlank() }?.let { "Smart meter: $it" }).joinToString("  ·  "),
+            listOfNotNull(v.sanctionedLoad.takeIf { it.isNotBlank() }?.let { "Sanctioned load: $it kW" }, v.phase.takeIf { it.isNotBlank() }).joinToString("  ·  "),
             v.funding.takeIf { it.isNotBlank() }?.let { "Funding: $it" } ?: "",
-            if (v.leadStatus == "Converted" && v.installAt > 0) "Installation date: ${dateFmt.format(Date(v.installAt))}" else "",
         ).filter { it.isNotBlank() }
         cust.forEach { ly = wrapText(it, margin + 10f, ly, half - 20f, paint(8.5f), 11f) }
 
