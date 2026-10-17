@@ -1153,7 +1153,7 @@ class VisitActivity : AppCompatActivity() {
                 // slider 1..max years with a small mark for every year
                 addView(SeekBar(context).apply {
                     setPadding(dp(16), paddingTop, dp(16), paddingBottom)
-                    max = maxY - 1
+                    this.max = maxY - 1
                     progress = v.loanYears - 1
                     tickMark = GradientDrawable().apply {
                         shape = GradientDrawable.OVAL
@@ -1176,7 +1176,7 @@ class VisitActivity : AppCompatActivity() {
                 // year numbers drawn exactly under each mark
                 val trackPad = dp(16)
                 addView(object : View(context) {
-                    val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    val numPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
                         color = Ui.MUTED; textSize = dpf(11f); textAlign = android.graphics.Paint.Align.CENTER
                     }
                     override fun onDraw(c: android.graphics.Canvas) {
@@ -1184,7 +1184,7 @@ class VisitActivity : AppCompatActivity() {
                         val span = (width - 2 * trackPad).toFloat()
                         for (i in 0 until n) {
                             val x = trackPad + if (n == 1) span / 2 else span * i / (n - 1)
-                            c.drawText("${i + 1}", x, p.textSize, p)
+                            c.drawText("${i + 1}", x, numPaint.textSize, numPaint)
                         }
                     }
                 }, lp(MATCH, dp(16)))
