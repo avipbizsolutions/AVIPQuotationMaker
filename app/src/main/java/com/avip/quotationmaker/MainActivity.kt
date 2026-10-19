@@ -27,6 +27,21 @@ class MainActivity : AppCompatActivity() {
         root.addView(ScrollView(this).apply { addView(content) }, lp(MATCH, 0, 1f))
         setContentView(root)
         checkUpdateInBackground()
+        checkAccess()
+    }
+
+    /** Someone taken off the App Users list is signed out the next time the app opens online. */
+    private fun checkAccess() {
+        lifecycleScope.launch {
+            val allowed = Catalog.allowedMobiles() ?: return@launch // offline: keep working
+            if (allowed.isEmpty() || isFinishing) return@launch
+            if (Catalog.mobileKey(Officer.mobile(this@MainActivity)) in allowed) return@launch
+            Officer.signOut(this@MainActivity)
+            startActivity(Intent(this@MainActivity, ProfileActivity::class.java)
+                .putExtra(ProfileActivity.EXTRA_REVOKED, true)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK))
+            finish()
+        }
     }
 
     private fun checkUpdateInBackground() {

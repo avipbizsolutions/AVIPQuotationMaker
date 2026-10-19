@@ -7,10 +7,15 @@ import android.text.InputType
 import android.view.Gravity
 import android.widget.ScrollView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 /** One-time sign-in: the sales executive's name and mobile go on every quotation. */
 class ProfileActivity : AppCompatActivity() {
+
+    companion object { const val EXTRA_REVOKED = "revoked" }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -18,6 +23,7 @@ class ProfileActivity : AppCompatActivity() {
         var name = Officer.name(this)
         var mobile = Officer.mobile(this)
         var code = Officer.code(this)
+        var busy = false
 
         val root = vertical { setBackgroundColor(Ui.BG) }
         root.addView(topBar(if (first) "Welcome" else "My profile", "Sales executive details", showBack = !first))
@@ -37,13 +43,39 @@ class ProfileActivity : AppCompatActivity() {
             addView(pillButton(if (first) "Start" else "Save", iconRes = R.drawable.ic_check) {
                 if (name.isBlank()) { toast("Please enter your name"); return@pillButton }
                 if (mobile.filter { it.isDigit() }.length < 10) { toast("Please enter a 10-digit mobile number"); return@pillButton }
-                Officer.save(this@ProfileActivity, name, mobile, code)
-                if (first) startActivity(Intent(this@ProfileActivity, MainActivity::class.java))
-                finish()
+                val save = {
+                    Officer.save(this@ProfileActivity, name, mobile, code)
+                    if (first) startActivity(Intent(this@ProfileActivity, MainActivity::class.java))
+                    finish()
+                }
+                // number unchanged: no need to check again
+                if (!first && Catalog.mobileKey(mobile) == Catalog.mobileKey(Officer.mobile(this@ProfileActivity))) { save(); return@pillButton }
+                if (busy) return@pillButton
+                busy = true
+                toast("Checking your number…")
+                lifecycleScope.launch {
+                    val allowed = Catalog.allowedMobiles()
+                    busy = false
+                    when {
+                        allowed == null -> AlertDialog.Builder(this@ProfileActivity)
+                            .setTitle("Can't check your number")
+                            .setMessage("Connect to the internet and try again. Your number is checked against AVIP's list of sales team members.")
+                            .setPositiveButton("OK", null).show()
+                        Catalog.mobileKey(mobile) !in allowed -> AlertDialog.Builder(this@ProfileActivity)
+                            .setTitle("Number not registered")
+                            .setMessage("${mobile.trim()} is not on AVIP's sales team list. Ask your Sales Head to add it in the price sheet (App Users tab), then try again.")
+                            .setPositiveButton("OK", null).show()
+                        else -> save()
+                    }
+                }
             }, lp().margins(context, t = 20))
         }
         root.addView(ScrollView(this).apply { addView(body) }, lp(MATCH, 0, 1f))
         setContentView(root)
+        if (intent.getBooleanExtra(EXTRA_REVOKED, false)) AlertDialog.Builder(this)
+            .setTitle("Access removed")
+            .setMessage("Your number is no longer on AVIP's sales team list. Ask your Sales Head if this is a mistake.")
+            .setPositiveButton("OK", null).show()
         window.statusBarColor = Ui.BRAND_DARK
         root.setBackgroundColor(Ui.BG)
         body.setBackgroundColor(Color.TRANSPARENT)

@@ -155,6 +155,28 @@ object Catalog {
         }.filter { it.available }
     }
 
+    private const val USERS_GID = "3"
+
+    /** Last 10 digits, so "+91 98765-43210" and "9876543210" match. */
+    fun mobileKey(s: String) = s.filter { it.isDigit() }.takeLast(10)
+
+    /**
+     * Mobiles allowed to use the app: the "App Users" tab of the price workbook
+     * (Mobile | Name | Active). A row with Active = "No" is left out.
+     * Returns null when the list could not be read (no internet, tab missing).
+     */
+    suspend fun allowedMobiles(): Set<String>? = withContext(Dispatchers.IO) {
+        try {
+            val rows = Csv.parse(download(byGid(SHEET_ID, USERS_GID)))
+            // only trust the real tab: its first header must be "Mobile"
+            if (rows.isEmpty() || rows[0].firstOrNull()?.trim()?.lowercase()?.startsWith("mobile") != true) return@withContext null
+            rows.drop(1).filter { r -> !(r.getOrNull(2)?.trim()?.lowercase() ?: "").startsWith("n") }
+                .map { mobileKey(it.getOrNull(0) ?: "") }.filter { it.length == 10 }.toSet()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun parseSettings(csv: String): AppSettings {
         val rows = Csv.parse(csv)
         // A missing tab can come back as some other tab: only trust a Key/Value table.

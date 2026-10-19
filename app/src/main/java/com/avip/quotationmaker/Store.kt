@@ -30,6 +30,9 @@ object Officer {
             .put("code", code.trim()).put("installId", installId(c)).put("appVersion", Updater.currentVersionName(c)))
     }
 
+    /** Removes the saved sign-in (number taken off the App Users list). */
+    fun signOut(c: Context) { p(c).edit().remove("name").remove("mobile").remove("code").apply() }
+
     fun installId(c: Context): String {
         val prefs = p(c)
         prefs.getString("install_id", null)?.let { return it }
