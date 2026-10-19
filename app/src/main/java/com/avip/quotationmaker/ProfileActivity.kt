@@ -63,7 +63,7 @@ class ProfileActivity : AppCompatActivity() {
                             .setPositiveButton("OK", null).show()
                         Catalog.mobileKey(mobile) !in allowed -> AlertDialog.Builder(this@ProfileActivity)
                             .setTitle("Number not registered")
-                            .setMessage("${mobile.trim()} is not on AVIP's sales team list. Ask your Sales Head to add it in the price sheet (App Users tab), then try again.")
+                            .setMessage("${mobile.trim()} is not on AVIP's sales team list. Contact your Sales Head to register you.")
                             .setPositiveButton("OK", null).show()
                         else -> save()
                     }
