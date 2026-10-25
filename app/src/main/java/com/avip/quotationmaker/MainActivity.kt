@@ -65,6 +65,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (VisitStore.applyReset(this)) Toast.makeText(this, "Visit records were reset by the office", Toast.LENGTH_LONG).show()
         build()
         Remote.flushAsync(this)
     }

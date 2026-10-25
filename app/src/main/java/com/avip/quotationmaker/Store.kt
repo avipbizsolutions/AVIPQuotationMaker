@@ -93,6 +93,26 @@ object VisitStore {
         dir(c, v.number).deleteRecursively()
     }
 
+    /**
+     * Office reset: App Settings key "reset_visits_before" = "yyyy-MM-dd HH:mm" (India time).
+     * Each phone, once per new value, deletes the visits it created before that moment and
+     * drops their unsent uploads. Returns true when something was cleared.
+     */
+    fun applyReset(c: Context): Boolean {
+        val stamp = Catalog.settings["reset_visits_before"]
+        if (stamp.isBlank()) return false
+        val p = c.getSharedPreferences("numbers", Context.MODE_PRIVATE)
+        if (p.getString("reset_done", "") == stamp) return false
+        val cutoff = runCatching {
+            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ENGLISH).apply { timeZone = java.util.TimeZone.getTimeZone("Asia/Kolkata") }.parse(stamp)?.time
+        }.getOrNull() ?: return false
+        val old = all(c).filter { it.createdAt in 1 until cutoff }
+        old.forEach { delete(c, it) }
+        Remote.dropVisitUploads(c, old.map { it.number }.toSet())
+        p.edit().putString("reset_done", stamp).apply()
+        return old.isNotEmpty()
+    }
+
     // ---- sharing ----
 
     fun uri(c: Context, file: File): Uri = FileProvider.getUriForFile(c, c.packageName + ".files", file)
@@ -250,6 +270,21 @@ object Remote {
                 sending = false
             }
         }.start()
+    }
+
+    /** Removes queued uploads of the given visits (after an office reset). */
+    fun dropVisitUploads(c: Context, numbers: Set<String>) {
+        if (numbers.isEmpty()) return
+        val p = c.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        synchronized(this) {
+            val arr = JSONArray(p.getString("pending", "[]") ?: "[]")
+            val keep = JSONArray()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                if (o.optString("number") !in numbers) keep.put(o)
+            }
+            p.edit().putString("pending", keep.toString()).apply()
+        }
     }
 
     /** Every executive's visits from the office sheet. Throws with a readable message on failure. */
