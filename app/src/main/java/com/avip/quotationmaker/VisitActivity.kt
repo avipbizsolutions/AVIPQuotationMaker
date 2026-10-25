@@ -864,7 +864,10 @@ class VisitActivity : AppCompatActivity() {
     private fun systemStep() {
         stepHeader("Choose the system", "Tap a card to select it for the quotation")
         val type = browseType ?: v.pkg?.type ?: SystemType.ONGRID
-        body.addView(typeSwitch(type) { browseType = it; browseKw = null; render() })
+        val custom = customTab ?: (v.pkg?.custom == true)
+        body.addView(typeSwitch(type, custom, onCustom = { customTab = true; render() }) {
+            customTab = false; browseType = it; browseKw = null; render()
+        })
 
         val best = recommendKw(v)
         if (best != null) {
@@ -880,6 +883,18 @@ class VisitActivity : AppCompatActivity() {
             }, lp().margins(this, t = 12))
         }
 
+        if (custom) {
+            val ct = v.pkg?.takeIf { it.custom }?.type ?: customType
+            body.addView(text("System type", 13f, Ui.MUTED, bold = true), lp().margins(this, t = 16))
+            body.addView(chips(SystemType.entries.map { it.label }, ct.label) { l ->
+                customType = SystemType.entries.first { it.label == l }
+                if (v.pkg?.custom == true && v.pkg?.type != customType) { v.pkg = SystemPackage.custom(customType, customFields ?: emptyMap()); save() }
+                render()
+            }, lp().margins(this, t = 6))
+            customForm(ct)
+            return
+        }
+
         val list = Catalog.of(type)
         val sizes = list.map { it.kw }.distinct().sorted()
         val kwLabel = browseKw ?: (v.pkg?.takeIf { it.type == type }?.kw ?: best)
@@ -893,25 +908,12 @@ class VisitActivity : AppCompatActivity() {
             val selected = v.pkg?.id == p.id
             body.addView(packageCard(p, selected, best != null && p.kw == best) {
                 if (v.pkg?.id != p.id) { v.pkg = p; v.discount = 0.0 }
-                customOpen = false; customFields = null
                 save(); render()
                 if (load != null && p.kw > load + 0.01) toast("Note: ${Fmt.num(p.kw)} kW is above the ${Fmt.num(load)} kW sanctioned load — load enhancement will be needed.")
             }, lp().margins(this, t = 12))
         }
-        // custom system filled in by the sales executive
-        if (v.pkg?.custom == true || customOpen) customForm(type)
-        else body.addView(horizontal {
-            background = rounded(Color.WHITE, dpf(18f), Ui.LINE, dp(1))
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-            foreground = context.ripple()
-            addView(badge(R.drawable.ic_edit, Ui.MUTED, 42, square = true))
-            addView(vertical {
-                addView(text("Custom system", 16f, Ui.TEXT, bold = true))
-                addView(text("Not in the price list? Fill in brands, panels and price", 12.5f, Ui.MUTED))
-            }, lp(0, WRAP, 1f).margins(context, l = 12))
-            addView(text("+", 26f, Ui.BRAND, bold = true))
-            setOnClickListener { customOpen = true; customFields = null; render() }
-        }, lp().margins(this, t = 16))
+        // a custom system is designed on the Custom tab
+        if (v.pkg?.custom == true) body.addView(text("A custom system is selected — see the Custom tab. Tap a card above to use a price-list system instead.", 12.5f, Ui.MUTED), lp().margins(this, t = 16))
 
         // a system chosen earlier that is no longer in the sheet
         v.pkg?.let { p -> if (!p.custom && Catalog.byId(p.id) == null) {
@@ -921,7 +923,8 @@ class VisitActivity : AppCompatActivity() {
     }
 
     private var loanField: android.widget.EditText? = null
-    private var customOpen = false
+    private var customTab: Boolean? = null // null = open Custom if a custom system is selected
+    private var customType = SystemType.ONGRID
     private var customFields: MutableMap<String, String>? = null
 
     private fun customForm(type: SystemType) {
@@ -939,10 +942,13 @@ class VisitActivity : AppCompatActivity() {
             customFields = m
         }
         val summary = text("", 14f, Color.WHITE, bold = true)
-        fun rebuild() {
+        // only replaces the selected system once something is typed in the form
+        fun rebuild(assign: Boolean = true) {
             val pkg = SystemPackage.custom(type, fields)
-            if (v.pkg?.custom != true || v.pkg?.type != type) v.discount = 0.0
-            v.pkg = pkg
+            if (assign) {
+                if (v.pkg?.custom != true || v.pkg?.type != type) v.discount = 0.0
+                v.pkg = pkg
+            }
             summary.text = if (pkg.totalWp > 0) "${Fmt.one(pkg.kwp)} kWp ${type.label} · ${pkg.totalPanels} panels" +
                 (if (pkg.price > 0) " · ${Fmt.inr(pkg.price)}" else "") else "Fill in the panels to see the size"
         }
@@ -956,10 +962,10 @@ class VisitActivity : AppCompatActivity() {
                     addView(text("CUSTOM ${type.label.uppercase()} SYSTEM", 11f, 0xDDFFFFFF.toInt(), bold = true) { letterSpacing = 0.1f })
                     addView(summary)
                 }, lp(0, WRAP, 1f))
-                addView(text("Remove", 13f, Color.WHITE, bold = true) {
+                addView(text("Clear", 13f, Color.WHITE, bold = true) {
                     setPadding(dp(10), dp(6), dp(4), dp(6))
                     setOnClickListener {
-                        customOpen = false; customFields = null
+                        customFields = null
                         if (v.pkg?.custom == true) { v.pkg = null; v.discount = 0.0 }
                         save(); render()
                     }
@@ -989,7 +995,7 @@ class VisitActivity : AppCompatActivity() {
             f(form, "Price incl. GST (₹) *", "Price (GST Included)", "Final selling price", number = true)
             addView(form)
         }, lp().margins(this, t = 16))
-        rebuild()
+        rebuild(v.pkg?.custom == true)
     }
 
     // ---------- step 4: price ----------

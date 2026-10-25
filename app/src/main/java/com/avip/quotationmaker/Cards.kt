@@ -155,20 +155,35 @@ fun recommendKw(v: Visit): Double? {
 }
 
 /** Shows a tab strip "On-grid | Hybrid" and returns the container. */
-fun Activity.typeSwitch(current: SystemType, onPick: (SystemType) -> Unit): View = horizontal {
+/** On-grid / Hybrid tabs, plus a "Custom" tab when [onCustom] is given ([customOn] = it is the open tab). */
+fun Activity.typeSwitch(current: SystemType, customOn: Boolean = false, onCustom: (() -> Unit)? = null, onPick: (SystemType) -> Unit): View = horizontal {
     background = rounded(Color.WHITE, dpf(16f), Ui.LINE, dp(1))
     setPadding(dp(4), dp(4), dp(4), dp(4))
+    val three = onCustom != null
     SystemType.entries.forEach { t ->
-        val on = t == current
+        val on = t == current && !customOn
         addView(vertical {
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(10), dp(8), dp(10))
             background = if (on) rounded(t.color, dpf(13f)) else null
             addView(icon(t.icon, if (on) Color.WHITE else t.color, 28))
             addView(text(t.label, 15f, if (on) Color.WHITE else Ui.TEXT, bold = true), lp(WRAP, WRAP).margins(context, t = 4))
-            addView(text(t.blurb, 11f, if (on) 0xDDFFFFFF.toInt() else Ui.MUTED) { gravity = Gravity.CENTER; maxLines = 2 })
+            addView(text(t.blurb, if (three) 10.5f else 11f, if (on) 0xDDFFFFFF.toInt() else Ui.MUTED) { gravity = Gravity.CENTER; maxLines = if (three) 3 else 2 })
             isClickable = true
             setOnClickListener { onPick(t) }
-        }, LinearLayout.LayoutParams(0, WRAP, 1f))
+        }, LinearLayout.LayoutParams(0, MATCH, 1f))
+    }
+    if (onCustom != null) {
+        val c = Ui.tierColor("custom")
+        addView(vertical {
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(10), dp(8), dp(10))
+            background = if (customOn) rounded(c, dpf(13f)) else null
+            addView(icon(R.drawable.ic_edit, if (customOn) Color.WHITE else c, 28))
+            addView(text("Custom", 15f, if (customOn) Color.WHITE else Ui.TEXT, bold = true), lp(WRAP, WRAP).margins(context, t = 4))
+            addView(text("Design your own system", 10.5f, if (customOn) 0xDDFFFFFF.toInt() else Ui.MUTED) { gravity = Gravity.CENTER; maxLines = 3 })
+            isClickable = true
+            setOnClickListener { onCustom() }
+        }, LinearLayout.LayoutParams(0, MATCH, 1f))
     }
 }
