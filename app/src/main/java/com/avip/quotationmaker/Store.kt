@@ -31,7 +31,11 @@ object Officer {
     }
 
     /** Removes the saved sign-in (number taken off the App Users list). */
-    fun signOut(c: Context) { p(c).edit().remove("name").remove("mobile").remove("code").apply() }
+    fun signOut(c: Context) { p(c).edit().remove("name").remove("mobile").remove("code").remove("team").apply() }
+
+    /** May see every executive's visits (App Users → "Sees all team visits"). */
+    fun teamView(c: Context) = p(c).getBoolean("team", false)
+    fun setTeamView(c: Context, on: Boolean) { p(c).edit().putBoolean("team", on).apply() }
 
     fun installId(c: Context): String {
         val prefs = p(c)
@@ -246,6 +250,31 @@ object Remote {
                 sending = false
             }
         }.start()
+    }
+
+    /** Every executive's visits from the office sheet. Throws with a readable message on failure. */
+    fun teamVisits(c: Context): JSONArray {
+        val endpoint = Catalog.settings["visit_log_url"]
+        if (!endpoint.startsWith("https://")) error("Office log is not set up")
+        val body = JSONObject().put("key", SHARED_KEY).put("kind", "team")
+            .put("mobile", Officer.mobile(c)).put("installId", Officer.installId(c)).toString()
+        val conn = URL(endpoint).openConnection() as HttpURLConnection
+        try {
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.connectTimeout = 15000
+            conn.readTimeout = 60000
+            conn.instanceFollowRedirects = true
+            conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+            conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
+            val o = try { JSONObject(text) } catch (_: Exception) { error("The office log needs updating (new Apps Script version)") }
+            if (!o.optBoolean("ok")) error(o.optString("error").ifBlank { "Could not load team visits" }.let {
+                if (it == "unknown kind") "The office log needs updating (new Apps Script version)" else it })
+            return o.optJSONArray("visits") ?: JSONArray()
+        } finally {
+            conn.disconnect()
+        }
     }
 
     private fun post(endpoint: String, body: String): Boolean {

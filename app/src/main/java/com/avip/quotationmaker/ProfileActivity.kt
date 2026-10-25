@@ -65,7 +65,7 @@ class ProfileActivity : AppCompatActivity() {
                             .setTitle("Number not registered")
                             .setMessage("${mobile.trim()} is not on AVIP's sales team list. Contact your Sales Head to register you.")
                             .setPositiveButton("OK", null).show()
-                        else -> save()
+                        else -> { Officer.setTeamView(this@ProfileActivity, allowed[Catalog.mobileKey(mobile)] == true); save() }
                     }
                 }
             }, lp().margins(context, t = 20))

@@ -162,16 +162,19 @@ object Catalog {
 
     /**
      * Mobiles allowed to use the app: the "App Users" tab of the price workbook
-     * (Mobile | Name | Active). A row with Active = "No" is left out.
+     * (Mobile | Name | Active | Role | Sees all team visits). A row with Active = "No" is left out.
+     * Value = true when that number may see the whole team's visits.
      * Returns null when the list could not be read (no internet, tab missing).
      */
-    suspend fun allowedMobiles(): Set<String>? = withContext(Dispatchers.IO) {
+    suspend fun allowedMobiles(): Map<String, Boolean>? = withContext(Dispatchers.IO) {
         try {
             val rows = Csv.parse(download(byGid(SHEET_ID, USERS_GID)))
             // only trust the real tab: its first header must be "Mobile"
             if (rows.isEmpty() || rows[0].firstOrNull()?.trim()?.lowercase()?.startsWith("mobile") != true) return@withContext null
             rows.drop(1).filter { r -> !(r.getOrNull(2)?.trim()?.lowercase() ?: "").startsWith("n") }
-                .map { mobileKey(it.getOrNull(0) ?: "") }.filter { it.length == 10 }.toSet()
+                .map { mobileKey(it.getOrNull(0) ?: "") to (it.getOrNull(4)?.trim()?.lowercase()?.startsWith("y") == true) }
+                .filter { it.first.length == 10 }
+                .groupBy({ it.first }, { it.second }).mapValues { (_, v) -> v.any { it } }
         } catch (_: Exception) {
             null
         }

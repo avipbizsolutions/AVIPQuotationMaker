@@ -20,9 +20,15 @@
  * 4. Paste it in the price sheet's "App Settings" tab, key "visit_log_url".
  *    Phones pick it up on their next launch — no app update needed.
  * When you change this code later: Deploy > Manage deployments > Edit > Version: New version.
+ *
+ * Team view: anyone marked "Yes" under "Sees all team visits" in the price sheet's
+ * "App Users" tab can see every executive's visits in the app (Team Visits screen).
  */
 const SHARED_KEY = 'avip-quote-7Qm4'; // must match Remote.kt
 const FOLDER_NAME = 'AVIP Site Visits';
+const PRICE_SHEET_ID = '1g4CSk_r3YaaBZ9RO4vGIO8n14GrVrKaejB35HNPCjXc'; // "AVIP Customer Prices (App)"
+// never sent to phones, even for the team view
+const PRIVATE_COLUMNS = ['PAN', 'Aadhaar (last 4)'];
 
 const VISIT_HEADERS = [
   'Received', 'Visit No', 'Visit Date', 'Sales Executive', 'Exec Mobile', 'Customer', 'WhatsApp',
@@ -45,6 +51,7 @@ function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
     if (d.key !== SHARED_KEY) return reply({ ok: false, error: 'unauthorised' });
+    if (d.kind === 'team') return reply(teamVisits(SpreadsheetApp.getActiveSpreadsheet(), d)); // read only: no lock
     lock.waitLock(20000);
     const book = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -111,6 +118,35 @@ function saveOfficer(book, d) {
   if (i >= 0) sheet.getRange(i + 2, 1, 1, row.length).setValues([row]);
   else sheet.appendRow(row);
 }
+
+// ---------------------------------------------------------------- team view
+
+/** All visits of the whole team, for numbers allowed in the App Users tab. */
+function teamVisits(book, d) {
+  const mob = last10(d.mobile);
+  if (mob.length !== 10) return { ok: false, error: 'no mobile' };
+  // the request must come from a phone registered with that number
+  const team = tab(book, 'Sales Team', TEAM_HEADERS);
+  const reg = team.getLastRow() > 1 ? team.getRange(2, 1, team.getLastRow() - 1, TEAM_HEADERS.length).getValues() : [];
+  if (!reg.some(r => last10(r[2]) === mob && String(r[4]) === String(d.installId))) {
+    return { ok: false, error: 'This phone is not registered yet. Open the app with internet and try again in a minute.' };
+  }
+  const users = SpreadsheetApp.openById(PRICE_SHEET_ID).getSheetByName('App Users').getDataRange().getDisplayValues();
+  const me = users.slice(1).find(r => last10(r[0]) === mob && !/^\s*n/i.test(r[2] || '') && /^\s*y/i.test(r[4] || ''));
+  if (!me) return { ok: false, error: 'Your number does not have team view. Ask the Sales Head.' };
+
+  const sv = tab(book, 'Site Visits', VISIT_HEADERS);
+  const last = sv.getLastRow();
+  const rows = last > 1 ? sv.getRange(2, 1, last - 1, VISIT_HEADERS.length).getDisplayValues() : [];
+  const visits = rows.filter(r => r[COL['Visit No'] - 1]).slice(-1000).reverse().map(r => {
+    const o = {};
+    VISIT_HEADERS.forEach((h, i) => { if (PRIVATE_COLUMNS.indexOf(h) < 0 && r[i] !== '') o[h] = r[i]; });
+    return o;
+  });
+  return { ok: true, visits: visits };
+}
+
+function last10(v) { return String(v == null ? '' : v).replace(/\D/g, '').slice(-10); }
 
 // ---------------------------------------------------------------- files
 

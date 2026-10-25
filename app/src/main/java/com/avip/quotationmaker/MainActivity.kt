@@ -35,7 +35,12 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val allowed = Catalog.allowedMobiles() ?: return@launch // offline: keep working
             if (allowed.isEmpty() || isFinishing) return@launch
-            if (Catalog.mobileKey(Officer.mobile(this@MainActivity)) in allowed) return@launch
+            val key = Catalog.mobileKey(Officer.mobile(this@MainActivity))
+            if (key in allowed) {
+                val team = allowed[key] == true
+                if (team != Officer.teamView(this@MainActivity)) { Officer.setTeamView(this@MainActivity, team); build() }
+                return@launch
+            }
             Officer.signOut(this@MainActivity)
             startActivity(Intent(this@MainActivity, ProfileActivity::class.java)
                 .putExtra(ProfileActivity.EXTRA_REVOKED, true)
@@ -120,6 +125,20 @@ class MainActivity : AppCompatActivity() {
             addView(shortcut("All Visits", "${visits.size} saved", R.drawable.ic_history, 0xFF6A1B9A.toInt()) {
                 startActivity(Intent(context, HistoryActivity::class.java))
             }, lp(0, WRAP, 1f))
+        }, lp().margins(this, b = 14))
+
+        if (Officer.teamView(this)) inner.addView(horizontal {
+            background = rounded(Color.WHITE, dpf(18f), Ui.LINE, dp(1))
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            foreground = context.ripple()
+            gravity = Gravity.CENTER_VERTICAL
+            addView(badge(R.drawable.ic_person, Ui.BRAND_DARK, 42, square = true))
+            addView(vertical {
+                addView(text("Team Visits", 15.5f, Ui.TEXT, bold = true))
+                addView(text("Every executive's visits, follow-ups and conversions", 12f, Ui.MUTED))
+            }, lp(0, WRAP, 1f).margins(context, l = 12))
+            addView(text("›", 28f, Ui.BRAND, bold = true))
+            setOnClickListener { startActivity(Intent(context, TeamVisitsActivity::class.java)) }
         }, lp().margins(this, b = 14))
 
         val note = Catalog.settings["announcement"]

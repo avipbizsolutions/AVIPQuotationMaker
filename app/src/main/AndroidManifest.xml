@@ -63,6 +63,7 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
         <activity android:name=".PriceListActivity" android:exported="false" />
+        <activity android:name=".TeamVisitsActivity" android:exported="false" />
         <activity
             android:name=".GeoCamActivity"
             android:exported="false"
