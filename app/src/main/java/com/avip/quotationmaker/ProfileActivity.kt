@@ -69,6 +69,18 @@ class ProfileActivity : AppCompatActivity() {
                     }
                 }
             }, lp().margins(context, t = 20))
+            if (!first) addView(pillButton("Log out", bg = Color.WHITE, fg = Ui.DANGER, iconRes = R.drawable.ic_logout) {
+                AlertDialog.Builder(this@ProfileActivity)
+                    .setTitle("Log out?")
+                    .setMessage("Your site visits stay saved on this phone. To log in again, your number must be on AVIP's sales team list.")
+                    .setPositiveButton("Log out") { _, _ ->
+                        Officer.signOut(this@ProfileActivity)
+                        startActivity(Intent(this@ProfileActivity, ProfileActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK))
+                        finish()
+                    }
+                    .setNegativeButton("Cancel", null).show()
+            }.apply { background = rounded(Color.WHITE, dpf(25f), Ui.DANGER, dp(1)) }, lp().margins(context, t = 12))
         }
         root.addView(ScrollView(this).apply { addView(body) }, lp(MATCH, 0, 1f))
         setContentView(root)
