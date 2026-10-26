@@ -68,7 +68,7 @@ import kotlin.math.roundToInt
  * burned into every photo (mini map with pin, address, lat/long, date/time, facing
  * direction, north arrow, customer and visit no.), GPS in the photo's EXIF, grid &
  * level, pinch / .5x–5x zoom, tap to focus, flash and HD/SD. Photos are saved into
- * the visit (and a copy in the phone gallery under Pictures/AVIP Surya Sales).
+ * the visit (and a copy in the phone gallery under Pictures/AVIP Solar Sales).
  * Stays open for several shots; "Done" returns them all.
  */
 class GeoCamActivity : AppCompatActivity() {
@@ -80,7 +80,7 @@ class GeoCamActivity : AppCompatActivity() {
         const val EXTRA_LAT = "lat"
         const val EXTRA_LNG = "lng"
         private const val PREFS = "geocam"
-        private const val GALLERY_FOLDER = "AVIP Surya Sales"
+        private const val GALLERY_FOLDER = "AVIP Solar Sales"
     }
 
     private data class Snapshot(val loc: Location?, val place: PlaceInfo, val time: Date, val heading: Float?)

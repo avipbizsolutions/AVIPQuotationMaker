@@ -61,7 +61,7 @@ object Stamp {
             setShadowLayer(unit * 0.003f, 0f, 0f, Color.BLACK)
         }
 
-        val title = place.title.ifBlank { if (loc == null) "Location unavailable" else brand.ifBlank { "AVIP Surya Sales" } }
+        val title = place.title.ifBlank { if (loc == null) "Location unavailable" else brand.ifBlank { "AVIP Solar Sales" } }
         val body = buildString {
             extra.filter { it.isNotBlank() }.forEach { appendLine(it) }
             if (place.address.isNotBlank()) appendLine(place.address)

@@ -65,7 +65,7 @@ class SplashActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             val r = pendingRelease
             if (r != null && Updater.canInstall(this)) lifecycleScope.launch { downloadAndInstall(r) }
-            else if (r != null) blockForUpdate("Allow AVIP Surya Sales to install updates, then tap Update now.")
+            else if (r != null) blockForUpdate("Allow AVIP Solar Sales to install updates, then tap Update now.")
             else goNext()
         }
 
@@ -90,7 +90,7 @@ class SplashActivity : AppCompatActivity() {
         root.addView(View(this), lp(MATCH, 0, 1f))
         val brandBlock = vertical {
             gravity = Gravity.CENTER_HORIZONTAL
-            addView(text("AVIP Surya Sales", 28f, Color.WHITE, bold = true) { gravity = Gravity.CENTER }, lp(WRAP, WRAP))
+            addView(text("AVIP Solar Sales", 28f, Color.WHITE, bold = true) { gravity = Gravity.CENTER }, lp(WRAP, WRAP))
             addView(text("Site visit to quotation, right at the customer's home", 14f, 0xDDFFFFFF.toInt()) { gravity = Gravity.CENTER }, lp(WRAP, WRAP).margins(context, t = 6))
             addView(text("by AVIP Business Solutions LLP", 12f, Ui.SUN, bold = true) { gravity = Gravity.CENTER }, lp(WRAP, WRAP).margins(context, t = 4))
         }
@@ -188,7 +188,7 @@ class SplashActivity : AppCompatActivity() {
     private fun askInstallPermission(release: ReleaseInfo) {
         AlertDialog.Builder(this)
             .setTitle("New version available")
-            .setMessage("Version ${release.versionName} is required to continue. Allow AVIP Surya Sales to install its own updates? This is needed only once.")
+            .setMessage("Version ${release.versionName} is required to continue. Allow AVIP Solar Sales to install its own updates? This is needed only once.")
             .setCancelable(false)
             .setPositiveButton("Allow") { _, _ ->
                 unknownSourcesLauncher.launch(
@@ -220,7 +220,7 @@ class SplashActivity : AppCompatActivity() {
                 setPadding(dp(10), dp(12), dp(10), dp(6))
                 setOnClickListener {
                     try {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/avipbizsolutions/AVIPQuotationMaker/releases/latest/download/AVIP-Surya-Sales.apk")))
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/avipbizsolutions/AVIPQuotationMaker/releases/latest/download/AVIP-Solar-Sales.apk")))
                     } catch (_: Exception) {}
                 }
             })

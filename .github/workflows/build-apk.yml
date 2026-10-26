@@ -37,6 +37,7 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk AVIP-Quotation-Maker.apk
           # New name; the old download link above keeps working
           cp app/build/outputs/apk/release/app-release.apk AVIP-Surya-Sales.apk
+          cp app/build/outputs/apk/release/app-release.apk AVIP-Solar-Sales.apk
 
       - name: Report build errors
         if: failure()
@@ -56,10 +57,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION_NAME }}
-          name: AVIP Surya Sales ${{ env.VERSION_NAME }}
+          name: AVIP Solar Sales ${{ env.VERSION_NAME }}
           body: Automatic build from commit ${{ github.sha }}.
           files: |
             AVIP-Quotation-Maker-${{ env.VERSION_NAME }}.apk
             AVIP-Quotation-Maker.apk
             AVIP-Surya-Sales.apk
+            AVIP-Solar-Sales.apk
           make_latest: true

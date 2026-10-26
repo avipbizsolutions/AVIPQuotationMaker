@@ -1,11 +1,11 @@
-# AVIP Surya Sales
+# AVIP Solar Sales
 
 Android app for the **AVIP Solar** sales team (AVIP Business Solutions LLP). The sales executive
 does the whole site visit on the phone at the customer's home and hands over a branded
 quotation before leaving — no more filling the paper form and sending the quote from office.
 
 **Download the latest APK:**
-https://github.com/avipbizsolutions/AVIPQuotationMaker/releases/latest/download/AVIP-Surya-Sales.apk
+https://github.com/avipbizsolutions/AVIPQuotationMaker/releases/latest/download/AVIP-Solar-Sales.apk
 
 ## The visit, step by step
 1. **Customer** — name, WhatsApp number, address, district, PIN, DISCOM (NBPDCL / SBPDCL),

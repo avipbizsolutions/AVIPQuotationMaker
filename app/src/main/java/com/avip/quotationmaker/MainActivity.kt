@@ -55,7 +55,7 @@ class MainActivity : AppCompatActivity() {
             if (latest.versionCode <= Updater.currentVersionCode(this@MainActivity) || isFinishing) return@launch
             androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
                 .setTitle("Update required")
-                .setMessage("Version ${latest.versionName} of AVIP Surya Sales is available and must be installed to continue. It takes a few seconds.")
+                .setMessage("Version ${latest.versionName} of AVIP Solar Sales is available and must be installed to continue. It takes a few seconds.")
                 .setCancelable(false)
                 .setPositiveButton("Update now") { _, _ ->
                     startActivity(Intent(this@MainActivity, SplashActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -185,7 +185,7 @@ class MainActivity : AppCompatActivity() {
                     adjustViewBounds = true
                 }, android.widget.FrameLayout.LayoutParams(dp(118), WRAP))
             }, lp(WRAP, WRAP))
-            addView(text("Surya Sales", 15f, Color.WHITE, bold = true) { maxLines = 1 }, lp(0, WRAP, 1f).margins(context, l = 10))
+            addView(text("Sales", 15f, Color.WHITE, bold = true) { maxLines = 1 }, lp(0, WRAP, 1f).margins(context, l = 10))
             addView(barButton(R.drawable.ic_refresh) { refresh() })
             addView(barButton(R.drawable.ic_person) { startActivity(Intent(context, ProfileActivity::class.java)) })
         })
