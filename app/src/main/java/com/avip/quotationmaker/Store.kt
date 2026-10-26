@@ -141,14 +141,19 @@ object VisitStore {
         var digits = number.filter { it.isDigit() }
         if (digits.length == 10) digits = "91$digits"
         val uris = ArrayList(files.map { uri(a, it) })
-        for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+        // WhatsApp Business first (the company number); personal WhatsApp only if Business isn't installed
+        for (pkg in listOf("com.whatsapp.w4b", "com.whatsapp")) {
             val i = (if (uris.size == 1) Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0])
                 else Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris))
                 .setType("application/pdf").setPackage(pkg)
                 .putExtra(Intent.EXTRA_TEXT, message)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             if (digits.isNotEmpty()) i.putExtra("jid", "$digits@s.whatsapp.net")
-            try { a.startActivity(i); return } catch (_: ActivityNotFoundException) {}
+            try {
+                a.startActivity(i)
+                if (pkg == "com.whatsapp") android.widget.Toast.makeText(a, "WhatsApp Business not found — opened personal WhatsApp", android.widget.Toast.LENGTH_LONG).show()
+                return
+            } catch (_: ActivityNotFoundException) {}
         }
         share(a, files, message)
     }
