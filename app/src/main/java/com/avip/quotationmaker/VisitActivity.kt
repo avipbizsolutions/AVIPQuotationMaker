@@ -1389,17 +1389,27 @@ class VisitActivity : AppCompatActivity() {
             val q = VisitStore.quotationPdf(this, v)
             val r = VisitStore.reportPdf(this, v)
             body.addView(sectionTitle("Share", "Quotation and site visit report"), lp().margins(this, t = 24, b = 4))
-            body.addView(pillButton("Send Quotation & Site Visit Report to Customer", 0xFF25D366.toInt(), iconRes = R.drawable.ic_chat) {
+            // the executive must open (check) both PDFs before they can go to the customer
+            val seenQ = checked("q"); val seenR = checked("r")
+            fun viewBtn(label: String, kind: String, f: java.io.File, seen: Boolean): View =
+                pillButton(label, if (seen) Ui.BRAND_LIGHT else Color.WHITE, Ui.BRAND, 46, if (seen) R.drawable.ic_check else R.drawable.ic_pdf) {
+                    fresh { markChecked(kind); VisitStore.open(this@VisitActivity, f); render() }
+                }.apply { background = rounded(if (seen) Ui.BRAND_LIGHT else Color.WHITE, dpf(23f), Ui.BRAND, dp(2)) }
+            body.addView(horizontal {
+                addView(viewBtn("Quotation", "q", q, seenQ), lp(0, WRAP, 1f).margins(context, r = 10))
+                addView(viewBtn("Site report", "r", r, seenR), lp(0, WRAP, 1f))
+            }, lp().margins(this, t = 10))
+            val ready = seenQ && seenR
+            body.addView(pillButton("Send Quotation & Site Visit Report to Customer", if (ready) 0xFF25D366.toInt() else 0xFFC9D3CD.toInt(),
+                if (ready) Color.WHITE else 0xFF6B7A71.toInt(), iconRes = R.drawable.ic_chat) {
+                if (!checked("q") || !checked("r")) {
+                    toast("Open and check the Quotation and Site report first")
+                    return@pillButton
+                }
                 fresh { VisitStore.whatsapp(this, listOf(q, r), v.mobile, customerMessage()) }
             }.also { b -> (b as? LinearLayout)?.let { l -> (l.getChildAt(l.childCount - 1) as? TextView)?.apply { maxLines = 2; textSize = 14f; gravity = Gravity.CENTER } } }, lp().margins(this, t = 10))
-            body.addView(horizontal {
-                addView(pillButton("Quotation", Color.WHITE, Ui.BRAND, 46, R.drawable.ic_pdf) { fresh { VisitStore.open(this@VisitActivity, q) } }.apply {
-                    background = rounded(Color.WHITE, dpf(23f), Ui.BRAND, dp(2))
-                }, lp(0, WRAP, 1f).margins(context, r = 10))
-                addView(pillButton("Site report", Color.WHITE, Ui.BRAND, 46, R.drawable.ic_pdf) { fresh { VisitStore.open(this@VisitActivity, r) } }.apply {
-                    background = rounded(Color.WHITE, dpf(23f), Ui.BRAND, dp(2))
-                }, lp(0, WRAP, 1f))
-            }, lp().margins(this, t = 10))
+            if (!ready) body.addView(text("Open " + listOfNotNull("Quotation".takeIf { !seenQ }, "Site report".takeIf { !seenR }).joinToString(" and ") +
+                " to check before sending to the customer.", 12f, Ui.DANGER, bold = true) { gravity = Gravity.CENTER }, lp().margins(this, t = 6))
             body.addView(pillButton("Share PDFs + voice notes (office)", Ui.BRAND_LIGHT, Ui.BRAND_DARK, 46, R.drawable.ic_share) {
                 fresh {
                     val files = listOf(q, r).filter { it.exists() } +
@@ -1576,6 +1586,13 @@ class VisitActivity : AppCompatActivity() {
         !VisitStore.quotationPdf(this, v).exists() || !VisitStore.reportPdf(this, v).exists()
 
     private var pdfJob = false
+
+    /** Whether the executive has opened this version of the PDF ("q" quotation / "r" site report). */
+    private fun checked(kind: String) = v.pdfKey.isNotBlank() && !pdfsStale() &&
+        getSharedPreferences("pdf_checked", MODE_PRIVATE).getString("${kind}_${v.number}", "") == v.pdfKey
+
+    private fun markChecked(kind: String) =
+        getSharedPreferences("pdf_checked", MODE_PRIVATE).edit().putString("${kind}_${v.number}", v.pdfKey).apply()
 
     /** Runs [action] with up-to-date PDFs, refreshing them first if something changed. */
     private fun fresh(action: () -> Unit) {
