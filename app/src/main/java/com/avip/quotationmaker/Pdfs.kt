@@ -595,6 +595,14 @@ class Pdfs(private val context: Context) {
             bank.forEach { image(it, width, 300f, border = true) }
         }
 
+        if (v.isLoan) listOf("PAN card" to v.panDocs, "Aadhaar" to v.aadhaarDocs).forEach { (title, names) ->
+            val files = names.map { VisitStore.file(context, v, it) }.filter { it.exists() }
+            if (files.isNotEmpty()) {
+                heading("$title — loan KYC proof")
+                files.forEach { image(it, width, 260f, border = true) }
+            }
+        }
+
         signatures(v, "Customer signature")
         finish(out)
     }

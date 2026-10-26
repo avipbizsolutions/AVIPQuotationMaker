@@ -229,6 +229,8 @@ class Visit(
     var loanYears = 10
     var bankDocType = "" // Bank statement / Passbook / Cancelled cheque
     val bankDocs = mutableListOf<String>()
+    val panDocs = mutableListOf<String>() // PAN card photo (loan)
+    val aadhaarDocs = mutableListOf<String>() // Aadhaar front / back (loan)
 
     // site
     var lat = 0.0
@@ -293,6 +295,7 @@ class Visit(
         put("customerSign", customerSign); put("officerName", officerName); put("officerMobile", officerMobile)
         put("funding", funding); put("loanAmount", loanAmount); put("nameChange", nameChange); put("smartMeter", smartMeter); put("downPayment", downPayment); put("loanYears", loanYears)
         put("bankDocType", bankDocType); put("bankDocs", JSONArray(bankDocs))
+        put("panDocs", JSONArray(panDocs)); put("aadhaarDocs", JSONArray(aadhaarDocs))
         put("structureType", structureType); put("mountingLayout", mountingLayout); put("voiceNotes", JSONArray(voiceNotes)); put("videos", JSONArray(videos))
         put("followUpAt", followUpAt); put("followUpNote", followUpNote); put("leadStatus", leadStatus); put("installAt", installAt)
         put("followUps", JSONArray().apply { followUps.forEach { put(it.toJson()) } })
@@ -322,6 +325,8 @@ class Visit(
             funding = o.optString("funding"); loanAmount = o.optString("loanAmount"); nameChange = o.optString("nameChange"); smartMeter = o.optString("smartMeter"); downPayment = o.optString("downPayment"); loanYears = o.optInt("loanYears", 10)
             bankDocType = o.optString("bankDocType")
             o.optJSONArray("bankDocs")?.let { a -> for (i in 0 until a.length()) bankDocs += a.optString(i) }
+            o.optJSONArray("panDocs")?.let { a -> for (i in 0 until a.length()) panDocs += a.optString(i) }
+            o.optJSONArray("aadhaarDocs")?.let { a -> for (i in 0 until a.length()) aadhaarDocs += a.optString(i) }
             structureType = o.optString("structureType")
             mountingLayout = o.optString("mountingLayout")
             o.optJSONArray("voiceNotes")?.let { a -> for (i in 0 until a.length()) voiceNotes += a.optString(i) }

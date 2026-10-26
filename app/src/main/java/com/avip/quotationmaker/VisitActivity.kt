@@ -70,13 +70,15 @@ class VisitActivity : AppCompatActivity() {
     private var signPad: DrawPad? = null
     private var signDirty = false
     private var pendingPhoto: File? = null
-    private var photoToBank = false // next photo goes to the bank proof list
+    private var photoTarget = "site" // where the next photo goes: site / bank / pan / aadhaar
     private var recorder: android.media.MediaRecorder? = null
     private var recordingFile: File? = null
     private var player: android.media.MediaPlayer? = null
     private var playing = ""
 
-    private fun photoList() = if (photoToBank) v.bankDocs else v.photos
+    private fun photoList() = when (photoTarget) {
+        "bank" -> v.bankDocs; "pan" -> v.panDocs; "aadhaar" -> v.aadhaarDocs; else -> v.photos
+    }
 
     // ---------- activity results ----------
 
@@ -476,7 +478,7 @@ class VisitActivity : AppCompatActivity() {
         body.addView(sectionTitle("Site photos & videos",
             "Photos are GPS stamped like AVIP GPSCam · videos are a walk-around (not stamped)"), lp().margins(this, t = 20, b = 10))
         body.addView(horizontal {
-            addView(pillButton("Add photo", Ui.BRAND, iconRes = R.drawable.ic_camera, heightDp = 48) { addPhoto(false) }, lp(0, WRAP, 1f).margins(context, r = 10))
+            addView(pillButton("Add photo", Ui.BRAND, iconRes = R.drawable.ic_camera, heightDp = 48) { addPhoto("site") }, lp(0, WRAP, 1f).margins(context, r = 10))
             addView(pillButton("Add video", Ui.BLUE, iconRes = R.drawable.ic_video, heightDp = 48) { addVideo() }, lp(0, WRAP, 1f))
         })
         val photoCount = v.photos.size; val videoCount = v.videos.size
@@ -486,7 +488,7 @@ class VisitActivity : AppCompatActivity() {
         } else {
             body.addView(text("$photoCount photo" + (if (photoCount == 1) "" else "s") + " · $videoCount video" + (if (videoCount == 1) "" else "s"),
                 12.5f, Ui.MUTED, bold = true), lp().margins(this, t = 12, b = 6))
-            if (photoCount > 0) body.addView(photoGrid(v.photos, bank = false, withAdd = false))
+            if (photoCount > 0) body.addView(photoGrid(v.photos, "site", withAdd = false))
             if (videoCount > 0) body.addView(videoGrid(withAdd = false))
         }
 
@@ -559,7 +561,8 @@ class VisitActivity : AppCompatActivity() {
         }, lp().margins(this, t = 16))
     }
 
-    private fun photoGrid(list: MutableList<String>, bank: Boolean, withAdd: Boolean = true): View {
+    private fun photoGrid(list: MutableList<String>, target: String, withAdd: Boolean = true, cellDp: Int = 104): View {
+        val bank = target != "site"
         val box = vertical { }
         val items: List<String?> = list.toList() + if (withAdd) listOf(null) else emptyList()
         items.chunked(3).forEach { row ->
@@ -575,7 +578,7 @@ class VisitActivity : AppCompatActivity() {
                             addView(icon(R.drawable.ic_camera, Ui.BRAND, 32))
                             addView(text(if (bank) "Add proof" else "Add photo", 12.5f, Ui.BRAND_DARK, bold = true), lp(WRAP, WRAP).margins(context, t = 4))
                         }, FrameLayout.LayoutParams(MATCH, MATCH))
-                        cell.setOnClickListener { addPhoto(bank) }
+                        cell.setOnClickListener { addPhoto(target) }
                     } else {
                         val f = VisitStore.file(context, v, name)
                         cell.addView(ImageView(context).apply {
@@ -594,7 +597,7 @@ class VisitActivity : AppCompatActivity() {
                             }
                         }, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.TOP or Gravity.END).apply { setMargins(0, dp(6), dp(6), 0) })
                     }
-                    addView(cell, lp(0, dp(104), 1f).margins(context, r = 8))
+                    addView(cell, lp(0, dp(cellDp), 1f).margins(context, r = 8))
                 }
                 repeat(3 - row.size) { addView(View(context), lp(0, 1, 1f).margins(context, r = 8)) }
             }, lp().margins(this, b = 8))
@@ -602,8 +605,32 @@ class VisitActivity : AppCompatActivity() {
         return box
     }
 
-    private fun addPhoto(bank: Boolean) {
-        photoToBank = bank
+    /** Text field with an "Attach proof" button beside it, and the attached photos below. */
+    private fun idField(parent: LinearLayout, label: String, value: String, hint: String, type: Int, maxLen: Int,
+                        target: String, docs: MutableList<String>, onChanged: (String) -> Unit) {
+        parent.addView(text(label, 13f, Ui.MUTED, bold = true), lp().margins(this, t = 12, b = 6))
+        parent.addView(horizontal {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(input(hint, type, value, maxLen).apply { onChange(onChanged) }, lp(0, WRAP, 1f))
+            val has = docs.isNotEmpty()
+            addView(horizontal {
+                gravity = Gravity.CENTER
+                background = if (has) rounded(Ui.BRAND, dpf(14f)) else rounded(Ui.BRAND_LIGHT, dpf(14f), Ui.BRAND, dp(1))
+                setPadding(dp(10), 0, dp(12), 0)
+                minimumHeight = dp(48)
+                foreground = context.ripple()
+                addView(icon(if (has) R.drawable.ic_check else R.drawable.ic_camera, if (has) Color.WHITE else Ui.BRAND, 18))
+                addView(text(if (has) "Proof (${docs.size})" else "Attach proof", 13f, if (has) Color.WHITE else Ui.BRAND_DARK, bold = true) { maxLines = 1 },
+                    lp(WRAP, WRAP).margins(context, l = 6))
+                setOnClickListener { addPhoto(target) }
+            }, lp(WRAP, MATCH).margins(context, l = 8))
+        })
+        if (docs.isNotEmpty()) parent.addView(photoGrid(docs, target, withAdd = false, cellDp = 76), lp().margins(this, t = 8))
+    }
+
+    private fun addPhoto(target: String) {
+        photoTarget = target
+        val bank = target != "site"
         if (!bank) {
             // site photos always come from the GPS camera so they carry the location stamp
             geoCam.launch(Intent(this, GeoCamActivity::class.java)
@@ -614,10 +641,10 @@ class VisitActivity : AppCompatActivity() {
                 )))
             return
         }
-        AlertDialog.Builder(this).setTitle(if (bank) "Add bank proof photo" else "Add site photo")
+        AlertDialog.Builder(this).setTitle(when (target) { "pan" -> "Attach PAN card"; "aadhaar" -> "Attach Aadhaar (front / back)"; else -> "Add bank proof photo" })
             .setItems(arrayOf("Take photo with camera", "Choose from gallery")) { _, which ->
                 if (which == 0) withCamera {
-                    val f = VisitStore.file(this, v, (if (bank) "bank_" else "photo_") + "${System.currentTimeMillis()}.jpg")
+                    val f = VisitStore.file(this, v, (if (bank) target + "_" else "photo_") + "${System.currentTimeMillis()}.jpg")
                     pendingPhoto = f
                     try { takePhoto.launch(VisitStore.uri(this, f)) } catch (_: Exception) { toast("Camera not available") }
                 } else pickPhoto.launch("image/*")
@@ -1124,7 +1151,7 @@ class VisitActivity : AppCompatActivity() {
             addView(sectionTitle("Bank proof for subsidy", if (v.isLoan) "Loan account where the subsidy will be credited" else "Account where the subsidy will be credited"),
                 lp().margins(context, t = 20, b = 10))
             addView(chips(listOf("Bank statement", "Passbook", "Cancelled cheque"), v.bankDocType) { v.bankDocType = it })
-            addView(photoGrid(v.bankDocs, bank = true), lp().margins(context, t = 10))
+            addView(photoGrid(v.bankDocs, "bank"), lp().margins(context, t = 10))
             visibility = if (v.subsidyOn) View.VISIBLE else View.GONE
         }
         body.addView(bankBox)
@@ -1169,8 +1196,8 @@ class VisitActivity : AppCompatActivity() {
                 }
                 addView(error, lp().margins(context, t = 4))
                 addView(rateText, lp().margins(context, t = 6))
-                field(this, "PAN", v.pan, "ABCDE1234F", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS, maxLen = 10) { v.pan = it.uppercase() }
-                field(this, "Aadhaar", v.aadhaar, "12 digits", InputType.TYPE_CLASS_NUMBER, maxLen = 12) { v.aadhaar = it }
+                idField(this, "PAN", v.pan, "ABCDE1234F", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS, 10, "pan", v.panDocs) { v.pan = it.uppercase() }
+                idField(this, "Aadhaar", v.aadhaar, "12 digits", InputType.TYPE_CLASS_NUMBER, 12, "aadhaar", v.aadhaarDocs) { v.aadhaar = it }
                 addView(text("Aadhaar prints only on the internal site visit report, never on the quotation.", 11.5f, Ui.MUTED), lp().margins(context, t = 6))
                 val maxY = Money.maxYears()
                 v.loanYears = v.loanYears.coerceIn(1, maxY)
