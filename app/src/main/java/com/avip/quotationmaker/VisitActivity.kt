@@ -1339,7 +1339,7 @@ class VisitActivity : AppCompatActivity() {
             body.addView(pillButton("Send Quotation & Site Visit Report to Customer", 0xFF25D366.toInt(), iconRes = R.drawable.ic_chat) {
                 if (!q.exists() || !r.exists()) { makePdfs(); return@pillButton }
                 VisitStore.whatsapp(this, listOf(q, r), v.mobile, customerMessage())
-            }.apply { (getChildAt(childCount - 1) as? TextView)?.apply { maxLines = 2; textSize = 14f; gravity = Gravity.CENTER } }, lp().margins(this, t = 10))
+            }.also { b -> (b as? LinearLayout)?.let { l -> (l.getChildAt(l.childCount - 1) as? TextView)?.apply { maxLines = 2; textSize = 14f; gravity = Gravity.CENTER } } }, lp().margins(this, t = 10))
             body.addView(horizontal {
                 addView(pillButton("Quotation", Color.WHITE, Ui.BRAND, 46, R.drawable.ic_pdf) { if (q.exists()) VisitStore.open(this@VisitActivity, q) else makePdfs() }.apply {
                     background = rounded(Color.WHITE, dpf(23f), Ui.BRAND, dp(2))
