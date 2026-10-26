@@ -102,6 +102,18 @@ class TeamVisitsActivity : AppCompatActivity() {
             setPadding(dp(12), dp(10), dp(12), dp(10))
             addView(text(error, 13f, Ui.DANGER, bold = true))
         }, lp().margins(this, b = 10))
+        // Google account used to open the PDFs (remembered; tap to change)
+        head.addView(horizontal {
+            gravity = Gravity.CENTER_VERTICAL
+            val acc = driveAccount
+            addView(icon(R.drawable.ic_person, Ui.MUTED, 16))
+            addView(text(if (acc.isBlank()) "PDFs open with: ask each time" else "PDFs open with: $acc", 12f, Ui.MUTED) { maxLines = 1 },
+                lp(0, WRAP, 1f).margins(context, l = 6))
+            addView(text(if (acc.isBlank()) "Choose" else "Change", 12.5f, Ui.BRAND, bold = true) {
+                setPadding(dp(8), dp(4), dp(4), dp(4))
+                setOnClickListener { chooseAccount(null) }
+            })
+        }, lp().margins(this, b = 8))
         if (loadedAt > 0 && !loading) head.addView(text("Updated " + SimpleDateFormat("dd MMM, h:mm a", Locale.ENGLISH).format(Date(loadedAt)), 11.5f, Ui.MUTED), lp().margins(this, b = 8))
 
         // summary for this month
@@ -193,12 +205,49 @@ class TeamVisitsActivity : AppCompatActivity() {
             }, lp(WRAP, WRAP).margins(context, r = 8))
             val phone = s(o, "WhatsApp").filter { it.isDigit() }
             if (phone.length >= 10) act("Call", Ui.BRAND) { openLink(Uri.parse("tel:$phone")) }
-            s(o, "Quotation PDF").takeIf { it.startsWith("http") }?.let { u -> act("Quotation", Ui.BLUE) { openLink(Uri.parse(u)) } }
-            s(o, "Site Report PDF").takeIf { it.startsWith("http") }?.let { u -> act("Report", 0xFF6A1B9A.toInt()) { openLink(Uri.parse(u)) } }
+            s(o, "Quotation PDF").takeIf { it.startsWith("http") }?.let { u -> act("Quotation", Ui.BLUE) { openDrive(u) } }
+            s(o, "Site Report PDF").takeIf { it.startsWith("http") }?.let { u -> act("Report", 0xFF6A1B9A.toInt()) { openDrive(u) } }
             s(o, "Map").takeIf { it.startsWith("http") }?.let { u -> act("Map", Ui.SUN) { openLink(Uri.parse(u)) } }
             addView(android.widget.HorizontalScrollView(context).apply { isHorizontalScrollBarEnabled = false; addView(actions) }, lp().margins(context, t = 10))
         }
         setOnClickListener { if (isOpen) expanded -= no else expanded += no; fill() }
+    }
+
+    // ---- Google account for Drive PDFs ----
+
+    private val prefs get() = getSharedPreferences("team_view", MODE_PRIVATE)
+    private val driveAccount get() = prefs.getString("drive_account", "") ?: ""
+    private var pendingLink: String? = null
+
+    private val accountPicker = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
+        val name = r.data?.getStringExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME)
+        if (r.resultCode == RESULT_OK && !name.isNullOrBlank()) {
+            prefs.edit().putString("drive_account", name).apply()
+            buildHead()
+        }
+        pendingLink?.let { pendingLink = null; if (!name.isNullOrBlank()) openDrive(it) }
+    }
+
+    private fun chooseAccount(thenOpen: String?) {
+        pendingLink = thenOpen
+        val cur = driveAccount.takeIf { it.isNotBlank() }?.let { android.accounts.Account(it, "com.google") }
+        try {
+            accountPicker.launch(android.accounts.AccountManager.newChooseAccountIntent(cur, null, arrayOf("com.google"), null, null, null, null))
+        } catch (_: Exception) {
+            thenOpen?.let { openLink(Uri.parse(it)) }
+        }
+    }
+
+    /** Opens a Drive file in the browser signed in as the remembered account (no account prompt each time). */
+    private fun openDrive(url: String) {
+        val acc = driveAccount
+        if (acc.isBlank()) { chooseAccount(url); return }
+        val u = Uri.parse(url).buildUpon().appendQueryParameter("authuser", acc).build()
+        // the Drive app ignores the account and asks again, so prefer a browser
+        for (pkg in listOf("com.android.chrome", "com.sec.android.app.sbrowser", "org.mozilla.firefox", "com.microsoft.emmx")) {
+            try { startActivity(Intent(Intent.ACTION_VIEW, u).setPackage(pkg)); return } catch (_: Exception) {}
+        }
+        openLink(u)
     }
 
     private fun openLink(u: Uri) {
