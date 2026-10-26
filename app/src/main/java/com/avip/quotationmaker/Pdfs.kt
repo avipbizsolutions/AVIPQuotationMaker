@@ -506,7 +506,7 @@ class Pdfs(private val context: Context) {
             "Address" to listOf(v.address, v.district, v.pincode).filter { it.isNotBlank() }.joinToString(", "),
             "Name correction / transfer" to v.nameChange.let { if (it == "Name transfer") "Name transfer (${Fmt.inr(v.nameTransferFee)})" else if (it == "Name correction") "Name correction (free)" else it },
             "Project funding" to (if (v.isLoan) "Loan (${v.loanYears} yrs, EMI ${Fmt.inr(Money.emi(v))})" else v.funding),
-            "Bank proof for subsidy" to (if (v.bankDocs.isEmpty()) "" else "${v.bankDocType.ifBlank { "Photo" }} — ${v.bankDocs.size} photo(s) attached"),
+            "Bank proof for subsidy" to (if (v.bankDocs.isEmpty() || !v.subsidyOn) "" else "${v.bankDocType.ifBlank { "Photo" }} — ${v.bankDocs.size} photo(s) attached"),
             "PAN" to (if (v.isLoan) v.pan else ""),
             "Aadhaar" to (if (v.isLoan) v.aadhaar else ""),
             "Consumer / CA No" to v.caNo,
@@ -589,7 +589,7 @@ class Pdfs(private val context: Context) {
             }
         }
 
-        val bank = v.bankDocs.map { VisitStore.file(context, v, it) }.filter { it.exists() }
+        val bank = if (!v.subsidyOn) emptyList() else v.bankDocs.map { VisitStore.file(context, v, it) }.filter { it.exists() }
         if (bank.isNotEmpty()) {
             heading("Bank proof for subsidy — ${v.bankDocType.ifBlank { "photo" }}")
             bank.forEach { image(it, width, 300f, border = true) }

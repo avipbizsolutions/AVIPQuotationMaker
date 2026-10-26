@@ -423,10 +423,6 @@ class VisitActivity : AppCompatActivity() {
                 addView(l, lp(0, WRAP, 1f).margins(context, r = 10)); addView(r, lp(0, WRAP, 1f))
             })
         })
-
-        body.addView(sectionTitle("Bank proof for subsidy", "Account where the subsidy will be credited"), lp().margins(this, t = 20, b = 10))
-        body.addView(chips(listOf("Bank statement", "Passbook", "Cancelled cheque"), v.bankDocType) { v.bankDocType = it })
-        body.addView(photoGrid(v.bankDocs, bank = true), lp().margins(this, t = 10))
     }
 
     // ---------- step 2: site ----------
@@ -1013,6 +1009,7 @@ class VisitActivity : AppCompatActivity() {
         val stateText = text("", 14f, 0xFF2E7D32.toInt(), bold = true)
         var loanRefresh: (() -> Unit)? = null
         var gstText: TextView? = null
+        var bankBox: View? = null
         fun refresh() {
             finalText.text = Fmt.inr(v.finalPrice)
             Money.gst(v.finalPrice).let { g ->
@@ -1021,6 +1018,7 @@ class VisitActivity : AppCompatActivity() {
             }
             discText.text = if (v.discount > 0) "− ${Fmt.inr(v.discount)}" else "No discount"
             val sub = Money.subsidy(p, v.subsidyOn)
+            bankBox?.visibility = if (v.subsidyOn) View.VISIBLE else View.GONE
             effText.text = Fmt.inr(v.finalPrice - sub)
             effSub.text = if (sub > 0) "after ${Fmt.inr(sub)} total subsidy" else "no subsidy applied"
             val pb = Money.paybackYears(v)
@@ -1120,6 +1118,16 @@ class VisitActivity : AppCompatActivity() {
             addView(effText)
             addView(effSub)
         }, lp().margins(this, t = 12))
+
+        // bank proof: only needed when the customer takes the subsidy
+        bankBox = vertical {
+            addView(sectionTitle("Bank proof for subsidy", if (v.isLoan) "Loan account where the subsidy will be credited" else "Account where the subsidy will be credited"),
+                lp().margins(context, t = 20, b = 10))
+            addView(chips(listOf("Bank statement", "Passbook", "Cancelled cheque"), v.bankDocType) { v.bankDocType = it })
+            addView(photoGrid(v.bankDocs, bank = true), lp().margins(context, t = 10))
+            visibility = if (v.subsidyOn) View.VISIBLE else View.GONE
+        }
+        body.addView(bankBox)
 
         // funding: discussed once the system and price are known
         body.addView(sectionTitle("Project funding", "How will the customer pay for ${Fmt.inr(v.finalPrice)}?"), lp().margins(this, t = 20, b = 10))
@@ -1277,7 +1285,7 @@ class VisitActivity : AppCompatActivity() {
             if (sub > 0) addView(kv("After subsidy", Fmt.inr(v.finalPrice - sub)))
             if (v.funding.isNotBlank()) addView(kv("Funding", if (v.isLoan) "Loan · EMI ${Fmt.inr(Money.emi(v))} × ${v.loanYears * 12}" else v.funding))
             addView(kv("Photos · videos · voice", "${v.photos.size} · ${v.videos.size} · ${v.voiceNotes.size}"))
-            if (v.bankDocs.isNotEmpty()) addView(kv("Bank proof", "${v.bankDocType.ifBlank { "Photo" }} (${v.bankDocs.size})"))
+            if (v.subsidyOn && v.bankDocs.isNotEmpty()) addView(kv("Bank proof", "${v.bankDocType.ifBlank { "Photo" }} (${v.bankDocs.size})"))
         })
 
         if (v.isQuoted) {
