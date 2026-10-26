@@ -1227,8 +1227,8 @@ class VisitActivity : AppCompatActivity() {
                 }
                 addView(error, lp().margins(context, t = 4))
                 addView(rateText, lp().margins(context, t = 6))
-                idField(this, "PAN", v.pan, "ABCDE1234F", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS, 10, "pan", v.panDocs) { v.pan = it.uppercase() }
-                idField(this, "Aadhaar", v.aadhaar, "12 digits", InputType.TYPE_CLASS_NUMBER, 12, "aadhaar", v.aadhaarDocs) { v.aadhaar = it }
+                idField(this, "PAN *", v.pan, "ABCDE1234F", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS, 10, "pan", v.panDocs) { v.pan = it.uppercase() }
+                idField(this, "Aadhaar *", v.aadhaar, "12 digits", InputType.TYPE_CLASS_NUMBER, 12, "aadhaar", v.aadhaarDocs) { v.aadhaar = it }
                 addView(text("Aadhaar prints only on the internal site visit report, never on the quotation.", 11.5f, Ui.MUTED), lp().margins(context, t = 6))
                 // bank requirement: the customer photographed at the site, GPS-stamped
                 addView(text("Customer at site — GPS photo *", 13f, Ui.MUTED, bold = true), lp().margins(context, t = 14, b = 6))
@@ -1327,6 +1327,8 @@ class VisitActivity : AppCompatActivity() {
         v.funding.isBlank() -> "Choose the project funding: Own fund or Loan"
         v.isLoan && (Fmt.parse(v.loanAmount) ?: 0.0) <= 0 -> "Enter the loan amount"
         v.isLoan && Money.loanTooHigh(v) -> "Loan can't be more than the project cost of ${Fmt.inr(v.finalPrice)}"
+        v.isLoan && v.panDocs.isEmpty() -> "Attach the PAN card photo (needed for the loan)"
+        v.isLoan && v.aadhaarDocs.isEmpty() -> "Attach the Aadhaar photo (needed for the loan)"
         v.isLoan && v.customerPhotos.isEmpty() -> "Take the GPS photo of the customer at the site (needed for the loan)"
         else -> null
     }
