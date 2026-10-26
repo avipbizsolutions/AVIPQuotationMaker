@@ -1179,7 +1179,7 @@ class VisitActivity : AppCompatActivity() {
 
         // bank proof: only needed when the customer takes the subsidy
         bankBox = vertical {
-            addView(sectionTitle("Bank proof for subsidy", if (v.isLoan) "Loan account where the subsidy will be credited" else "Account where the subsidy will be credited"),
+            addView(sectionTitle("Bank proof for subsidy *", if (v.isLoan) "Loan account where the subsidy will be credited" else "Account where the subsidy will be credited"),
                 lp().margins(context, t = 20, b = 10))
             addView(chips(listOf("Bank statement", "Passbook", "Cancelled cheque"), v.bankDocType) { v.bankDocType = it })
             addView(photoGrid(v.bankDocs, "bank"), lp().margins(context, t = 10))
@@ -1322,6 +1322,8 @@ class VisitActivity : AppCompatActivity() {
 
     /** Why the Price step can't be left yet, or null. */
     private fun fundingProblem(): String? = when {
+        v.subsidyOn && v.bankDocType.isBlank() -> "Choose the bank proof for subsidy: Bank statement, Passbook or Cancelled cheque"
+        v.subsidyOn && v.bankDocs.isEmpty() -> "Add a photo of the bank proof for subsidy"
         v.funding.isBlank() -> "Choose the project funding: Own fund or Loan"
         v.isLoan && (Fmt.parse(v.loanAmount) ?: 0.0) <= 0 -> "Enter the loan amount"
         v.isLoan && Money.loanTooHigh(v) -> "Loan can't be more than the project cost of ${Fmt.inr(v.finalPrice)}"
