@@ -1315,29 +1315,6 @@ class VisitActivity : AppCompatActivity() {
             if (v.subsidyOn && v.bankDocs.isNotEmpty()) addView(kv("Bank proof", "${v.bankDocType.ifBlank { "Photo" }} (${v.bankDocs.size})"))
         })
 
-        if (v.isQuoted) {
-            val q = VisitStore.quotationPdf(this, v)
-            val r = VisitStore.reportPdf(this, v)
-            body.addView(pillButton("Send quotation on WhatsApp", 0xFF25D366.toInt(), iconRes = R.drawable.ic_chat) {
-                if (!q.exists()) { makePdfs(); return@pillButton }
-                VisitStore.whatsapp(this, q, v.mobile, customerMessage())
-            }, lp().margins(this, t = 16))
-            body.addView(horizontal {
-                addView(pillButton("Quotation", Color.WHITE, Ui.BRAND, 46, R.drawable.ic_pdf) { if (q.exists()) VisitStore.open(this@VisitActivity, q) else makePdfs() }.apply {
-                    background = rounded(Color.WHITE, dpf(23f), Ui.BRAND, dp(2))
-                }, lp(0, WRAP, 1f).margins(context, r = 10))
-                addView(pillButton("Site report", Color.WHITE, Ui.BRAND, 46, R.drawable.ic_pdf) { if (r.exists()) VisitStore.open(this@VisitActivity, r) else makePdfs() }.apply {
-                    background = rounded(Color.WHITE, dpf(23f), Ui.BRAND, dp(2))
-                }, lp(0, WRAP, 1f))
-            }, lp().margins(this, t = 10))
-            body.addView(pillButton("Share PDFs + voice notes (office)", Ui.BRAND_LIGHT, Ui.BRAND_DARK, 46, R.drawable.ic_share) {
-                val files = listOf(q, r).filter { it.exists() } +
-                    (v.voiceNotes + v.videos).map { VisitStore.file(this, v, it) }.filter { it.exists() }
-                VisitStore.share(this, files, "Site visit ${v.number} — ${v.name}, ${v.district}")
-            }, lp().margins(this, t = 10))
-            body.addView(text("Changed something? Go back to any step, then tap Re-create PDFs.", 12f, Ui.MUTED) { gravity = Gravity.CENTER }, lp().margins(this, t = 12, b = 4))
-        }
-
         body.addView(horizontal {
             addView(sectionTitle("Customer signature", "On the site visit report and quotation"), lp(0, WRAP, 1f))
             addView(text("Clear", 14f, Ui.DANGER, bold = true) { setPadding(dp(10), dp(8), dp(6), dp(8)); setOnClickListener { signPad?.clear() } })
@@ -1353,6 +1330,31 @@ class VisitActivity : AppCompatActivity() {
         body.addView(text("Visiting officer: ${v.officerName.ifBlank { Officer.name(this) }} · ${v.officerMobile.ifBlank { Officer.mobile(this) }}", 12.5f, Ui.MUTED), lp().margins(this, t = 10))
 
         followUpSection()
+
+        // sharing at the end of the page
+        if (v.isQuoted) {
+            val q = VisitStore.quotationPdf(this, v)
+            val r = VisitStore.reportPdf(this, v)
+            body.addView(sectionTitle("Share", "Quotation and site visit report"), lp().margins(this, t = 24, b = 4))
+            body.addView(pillButton("Send Quotation & Site Visit Report to Customer", 0xFF25D366.toInt(), iconRes = R.drawable.ic_chat) {
+                if (!q.exists() || !r.exists()) { makePdfs(); return@pillButton }
+                VisitStore.whatsapp(this, listOf(q, r), v.mobile, customerMessage())
+            }.apply { (getChildAt(childCount - 1) as? TextView)?.apply { maxLines = 2; textSize = 14f; gravity = Gravity.CENTER } }, lp().margins(this, t = 10))
+            body.addView(horizontal {
+                addView(pillButton("Quotation", Color.WHITE, Ui.BRAND, 46, R.drawable.ic_pdf) { if (q.exists()) VisitStore.open(this@VisitActivity, q) else makePdfs() }.apply {
+                    background = rounded(Color.WHITE, dpf(23f), Ui.BRAND, dp(2))
+                }, lp(0, WRAP, 1f).margins(context, r = 10))
+                addView(pillButton("Site report", Color.WHITE, Ui.BRAND, 46, R.drawable.ic_pdf) { if (r.exists()) VisitStore.open(this@VisitActivity, r) else makePdfs() }.apply {
+                    background = rounded(Color.WHITE, dpf(23f), Ui.BRAND, dp(2))
+                }, lp(0, WRAP, 1f))
+            }, lp().margins(this, t = 10))
+            body.addView(pillButton("Share PDFs + voice notes (office)", Ui.BRAND_LIGHT, Ui.BRAND_DARK, 46, R.drawable.ic_share) {
+                val files = listOf(q, r).filter { it.exists() } +
+                    (v.voiceNotes + v.videos).map { VisitStore.file(this, v, it) }.filter { it.exists() }
+                VisitStore.share(this, files, "Site visit ${v.number} — ${v.name}, ${v.district}")
+            }, lp().margins(this, t = 10))
+            body.addView(text("Changed something? Go back to any step, then tap Re-create PDFs.", 12f, Ui.MUTED) { gravity = Gravity.CENTER }, lp().margins(this, t = 12, b = 4))
+        }
     }
 
     // ---------- follow-up ----------
@@ -1503,7 +1505,7 @@ class VisitActivity : AppCompatActivity() {
     private fun customerMessage(): String {
         val p = v.pkg
         val company = Catalog.settings["brand_name"]
-        return "Namaste ${v.name}, thank you for your time today. Please find your $company quotation for a " +
+        return "Namaste ${v.name}, thank you for your time today. Please find your $company quotation and site visit report for a " +
             "${p?.let { Fmt.one(it.kwp) + " kWp " + it.type.label } ?: ""} solar system (${v.number}). " +
             "For any question call ${v.officerName.ifBlank { Officer.name(this) }} on ${v.officerMobile.ifBlank { Officer.mobile(this) }}."
     }

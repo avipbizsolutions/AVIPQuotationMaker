@@ -134,19 +134,23 @@ object VisitStore {
         a.startActivity(Intent.createChooser(i, "Share"))
     }
 
-    /** Sends the PDF straight to the customer's WhatsApp chat (falls back to the share sheet). */
-    fun whatsapp(a: Activity, file: File, number: String, message: String) {
+    /** Sends the PDF(s) straight to the customer's WhatsApp chat (falls back to the share sheet). */
+    fun whatsapp(a: Activity, file: File, number: String, message: String) = whatsapp(a, listOf(file), number, message)
+
+    fun whatsapp(a: Activity, files: List<File>, number: String, message: String) {
         var digits = number.filter { it.isDigit() }
         if (digits.length == 10) digits = "91$digits"
+        val uris = ArrayList(files.map { uri(a, it) })
         for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
-            val i = Intent(Intent.ACTION_SEND).setType("application/pdf").setPackage(pkg)
-                .putExtra(Intent.EXTRA_STREAM, uri(a, file))
+            val i = (if (uris.size == 1) Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0])
+                else Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris))
+                .setType("application/pdf").setPackage(pkg)
                 .putExtra(Intent.EXTRA_TEXT, message)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             if (digits.isNotEmpty()) i.putExtra("jid", "$digits@s.whatsapp.net")
             try { a.startActivity(i); return } catch (_: ActivityNotFoundException) {}
         }
-        share(a, listOf(file), message)
+        share(a, files, message)
     }
 
     fun call(a: Activity, number: String) {
