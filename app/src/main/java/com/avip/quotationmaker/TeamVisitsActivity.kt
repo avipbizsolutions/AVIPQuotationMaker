@@ -39,7 +39,9 @@ class TeamVisitsActivity : AppCompatActivity() {
     private var loading = false
 
     private val cache get() = File(filesDir, "team_visits.json")
-    private val sheetDate = SimpleDateFormat("dd-MMM-yyyy", Locale.ENGLISH)
+    // the sheet shows dates as 26-Oct-2026 or 10/26/2026 depending on the column format
+    private val sheetDates = listOf("dd-MMM-yyyy", "M/d/yyyy", "yyyy-MM-dd").map { SimpleDateFormat(it, Locale.ENGLISH).apply { isLenient = false } }
+    private val niceDate = SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,7 +59,7 @@ class TeamVisitsActivity : AppCompatActivity() {
 
         if (!Officer.teamView(this)) { finish(); return }
         try {
-            if (cache.exists()) { all = parse(JSONArray(cache.readText())); loadedAt = cache.lastModified() }
+            if (cache.exists()) { all = parse(JSONArray(cache.readText())); loadedAt = cache.lastModified(); indexExecs() }
         } catch (_: Exception) {}
         buildHead()
         fill()
@@ -74,6 +76,7 @@ class TeamVisitsActivity : AppCompatActivity() {
             try {
                 val arr = withContext(Dispatchers.IO) { Remote.teamVisits(this@TeamVisitsActivity) }
                 all = parse(arr)
+                indexExecs()
                 loadedAt = System.currentTimeMillis()
                 withContext(Dispatchers.IO) { cache.writeText(arr.toString()) }
             } catch (e: Exception) {
@@ -85,7 +88,24 @@ class TeamVisitsActivity : AppCompatActivity() {
     }
 
     private fun s(o: JSONObject, k: String) = o.optString(k, "").trim()
-    private fun date(o: JSONObject, k: String): Date? = try { sheetDate.parse(s(o, k)) } catch (_: Exception) { null }
+    private fun date(o: JSONObject, k: String): Date? {
+        val t = s(o, k).substringBefore(' ')
+        if (t.isBlank()) return null
+        for (f in sheetDates) try { return f.parse(t) } catch (_: Exception) {}
+        return null
+    }
+
+    /** Date for display, e.g. 26 Oct 2026. */
+    private fun nice(o: JSONObject, k: String) = date(o, k)?.let { niceDate.format(it) } ?: s(o, k)
+
+    /** One name per executive (by mobile), the most recent one they used. */
+    private var execNames: Map<String, String> = emptyMap()
+    private fun ex(o: JSONObject) = execNames[Catalog.mobileKey(s(o, "Exec Mobile"))] ?: s(o, "Sales Executive")
+    private fun indexExecs() {
+        execNames = all.filter { Catalog.mobileKey(s(it, "Exec Mobile")).length == 10 && s(it, "Sales Executive").isNotBlank() }
+            .groupBy { Catalog.mobileKey(s(it, "Exec Mobile")) }
+            .mapValues { (_, list) -> list.maxByOrNull { date(it, "Received")?.time ?: 0L }?.let { s(it, "Sales Executive") } ?: "" }
+    }
 
     private fun followUpDue(o: JSONObject): Boolean {
         if (s(o, "Lead Status").ifBlank { "Open" } != "Open") return false
@@ -137,7 +157,7 @@ class TeamVisitsActivity : AppCompatActivity() {
             onChange { query = it.trim().lowercase(); fill() }
         })
         head.addView(chips(listOf("Open", "Converted", "Follow-up due"), status) { status = it; fill() }, lp().margins(this, t = 10))
-        val execs = all.map { s(it, "Sales Executive") }.filter { it.isNotBlank() }.groupingBy { it }.eachCount()
+        val execs = all.map { ex(it) }.filter { it.isNotBlank() }.groupingBy { it }.eachCount()
             .entries.sortedByDescending { it.value }.map { it.key }
         if (execs.size > 1) {
             head.addView(text("Sales executive", 12f, Ui.MUTED, bold = true), lp().margins(this, t = 10))
@@ -156,7 +176,7 @@ class TeamVisitsActivity : AppCompatActivity() {
                 "Converted" -> s(o, "Lead Status") == "Converted"
                 "Follow-up due" -> followUpDue(o)
                 else -> true
-            } && (exec.isBlank() || s(o, "Sales Executive") == exec) &&
+            } && (exec.isBlank() || ex(o) == exec) &&
                 (query.isBlank() || listOf("Customer", "WhatsApp", "Visit No", "Address", "District", "CA No", "System", "Sales Executive")
                     .joinToString(" ") { s(o, it) }.lowercase().contains(query))
         }
@@ -179,15 +199,15 @@ class TeamVisitsActivity : AppCompatActivity() {
             addView(text(s(o, "Customer").ifBlank { no }, 16f, Ui.TEXT, bold = true) { maxLines = 1 }, lp(0, WRAP, 1f))
             addView(tag(st, if (st == "Converted") Ui.BLUE else if (followUpDue(o)) Ui.DANGER else Ui.BRAND))
         })
-        addView(text(listOf(s(o, "Visit Date"), s(o, "Sales Executive"), s(o, "District")).filter { it.isNotBlank() }.joinToString("  ·  "), 12.5f, Ui.MUTED),
+        addView(text(listOf(nice(o, "Visit Date"), ex(o), s(o, "District")).filter { it.isNotBlank() }.joinToString("  ·  "), 12.5f, Ui.MUTED),
             lp().margins(context, t = 2))
         val sys = listOf(s(o, "System").ifBlank { s(o, "System Type") }, s(o, "Final Price").takeIf { it.isNotBlank() && it != "0" }?.let { "₹$it" } ?: "")
             .filter { it.isNotBlank() }.joinToString("  ·  ")
         if (sys.isNotBlank()) addView(text(sys, 13.5f, Ui.TEXT, bold = true), lp().margins(context, t = 6))
         val install = Regex("Installation wanted: ([^\\n|]+)").find(s(o, "Site Notes"))?.groupValues?.get(1)?.trim()
         when {
-            st == "Converted" && install != null -> addView(text("Installation wanted: $install", 12.5f, Ui.BLUE, bold = true), lp().margins(context, t = 4))
-            st == "Open" && s(o, "Next Follow-up").isNotBlank() -> addView(text("Follow-up: ${s(o, "Next Follow-up")}" +
+            st == "Converted" && install != null -> addView(text("Installation wanted: " + (runCatching { niceDate.format(sheetDates[2].parse(install)!!) }.getOrNull() ?: install), 12.5f, Ui.BLUE, bold = true), lp().margins(context, t = 4))
+            st == "Open" && s(o, "Next Follow-up").isNotBlank() -> addView(text("Follow-up: ${nice(o, "Next Follow-up")}" +
                 s(o, "Follow-up Note").takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty(), 12.5f, if (followUpDue(o)) Ui.DANGER else Ui.MUTED, bold = followUpDue(o)) { maxLines = if (isOpen) 6 else 1 },
                 lp().margins(context, t = 4))
         }
