@@ -77,7 +77,7 @@ class VisitActivity : AppCompatActivity() {
     private var playing = ""
 
     private fun photoList() = when (photoTarget) {
-        "bank" -> v.bankDocs; "pan" -> v.panDocs; "aadhaar" -> v.aadhaarDocs; else -> v.photos
+        "bank" -> v.bankDocs; "pan" -> v.panDocs; "aadhaar" -> v.aadhaarDocs; "customer" -> v.customerPhotos; else -> v.photos
     }
 
     // ---------- activity results ----------
@@ -101,6 +101,12 @@ class VisitActivity : AppCompatActivity() {
             }
             save(); render()
         }
+    }
+
+    private val signLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        val f = VisitStore.file(this, v, "customer_sign.png")
+        v.customerSign = if (f.exists()) f.name else ""
+        save(); render()
     }
 
     private val sketchLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -262,6 +268,8 @@ class VisitActivity : AppCompatActivity() {
         stopPlaying()
         savePads()
         save()
+        // anything changed after the quotation was made: refresh the PDFs on their own
+        if (v.isQuoted && pdfsStale()) makePdfs(silent = true)
     }
 
     private fun save() = VisitStore.save(this, v)
@@ -305,7 +313,8 @@ class VisitActivity : AppCompatActivity() {
                 followUpCard?.let { c -> scroll.post { scroll.smoothScrollTo(0, c.top - dp(12)) } }
                 return
             }
-            makePdfs(); return
+            if (v.isQuoted) { if (pdfsStale()) makePdfs(silent = true); leave() } else makePdfs()
+            return
         }
         go(step + 1)
     }
@@ -347,13 +356,15 @@ class VisitActivity : AppCompatActivity() {
             else -> finishStep()
         }
         backBtn.visibility = if (step == 0) View.GONE else View.VISIBLE
+        if (step == 4 && v.isQuoted && pdfsStale()) makePdfs(silent = true)
         nextBtn.text = when (step) {
-            4 -> if (v.isQuoted) "Re-create PDFs" else "Create Quotation"
+            4 -> if (v.isQuoted) "Done  ✓" else "Create Quotation"
             3 -> "Next: Sign  ›"
             else -> "Next  ›"
         }
-        nextBtn.background = rounded(if (step == 4) Ui.SUN else Ui.BRAND, dpf(25f))
-        nextBtn.setTextColor(if (step == 4) Ui.TEXT else Color.WHITE)
+        val sun = step == 4 && !v.isQuoted
+        nextBtn.background = rounded(if (sun) Ui.SUN else Ui.BRAND, dpf(25f))
+        nextBtn.setTextColor(if (sun) Ui.TEXT else Color.WHITE)
     }
 
     private fun renderStepBar() {
@@ -636,6 +647,17 @@ class VisitActivity : AppCompatActivity() {
         if (docs.isNotEmpty()) parent.addView(photoGrid(docs, target, withAdd = false, cellDp = 76), lp().margins(this, t = 8))
     }
 
+    /** GPS camera (same as AVIP GPS Cam) for the photo of the customer at the site. */
+    private fun customerGpsPhoto() {
+        photoTarget = "customer"
+        geoCam.launch(Intent(this, GeoCamActivity::class.java)
+            .putExtra(GeoCamActivity.EXTRA_DIR, VisitStore.dir(this, v.number).absolutePath)
+            .putStringArrayListExtra(GeoCamActivity.EXTRA_LINES, arrayListOf(
+                "Customer at site: ${v.name}" + if (v.district.isNotBlank()) ", ${v.district}" else "",
+                "Loan KYC · ${v.number} · ${v.officerName.ifBlank { Officer.name(this) }}",
+            )))
+    }
+
     private fun addPhoto(target: String) {
         photoTarget = target
         val bank = target != "site"
@@ -677,7 +699,8 @@ class VisitActivity : AppCompatActivity() {
     private val geoCam = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         val data = r.data ?: return@registerForActivityResult
         val files = data.getStringArrayListExtra(GeoCamActivity.EXTRA_FILES) ?: arrayListOf()
-        v.photos.addAll(files.filter { it !in v.photos })
+        val target = if (photoTarget == "customer") v.customerPhotos else v.photos
+        target.addAll(files.filter { it !in target })
         if (!v.hasLocation && data.hasExtra(GeoCamActivity.EXTRA_LAT)) {
             v.lat = data.getDoubleExtra(GeoCamActivity.EXTRA_LAT, 0.0)
             v.lng = data.getDoubleExtra(GeoCamActivity.EXTRA_LNG, 0.0)
@@ -1207,6 +1230,13 @@ class VisitActivity : AppCompatActivity() {
                 idField(this, "PAN", v.pan, "ABCDE1234F", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS, 10, "pan", v.panDocs) { v.pan = it.uppercase() }
                 idField(this, "Aadhaar", v.aadhaar, "12 digits", InputType.TYPE_CLASS_NUMBER, 12, "aadhaar", v.aadhaarDocs) { v.aadhaar = it }
                 addView(text("Aadhaar prints only on the internal site visit report, never on the quotation.", 11.5f, Ui.MUTED), lp().margins(context, t = 6))
+                // bank requirement: the customer photographed at the site, GPS-stamped
+                addView(text("Customer at site — GPS photo *", 13f, Ui.MUTED, bold = true), lp().margins(context, t = 14, b = 6))
+                val hasCust = v.customerPhotos.isNotEmpty()
+                addView(pillButton(if (hasCust) "Retake / add GPS photo" else "Take GPS photo of customer", if (hasCust) Ui.BRAND_LIGHT else Ui.BRAND,
+                    if (hasCust) Ui.BRAND_DARK else Color.WHITE, 46, R.drawable.ic_camera) { customerGpsPhoto() })
+                if (hasCust) addView(photoGrid(v.customerPhotos, "customer", withAdd = false, cellDp = 120), lp().margins(context, t = 8))
+                addView(text("Customer standing at the installation site · location, date & time stamped like AVIP GPS Cam", 11.5f, Ui.MUTED), lp().margins(context, t = 6))
                 val maxY = Money.maxYears()
                 v.loanYears = v.loanYears.coerceIn(1, maxY)
                 val tenureText = text("${v.loanYears} year" + if (v.loanYears > 1) "s" else "", 15f, Ui.BLUE, bold = true)
@@ -1295,6 +1325,7 @@ class VisitActivity : AppCompatActivity() {
         v.funding.isBlank() -> "Choose the project funding: Own fund or Loan"
         v.isLoan && (Fmt.parse(v.loanAmount) ?: 0.0) <= 0 -> "Enter the loan amount"
         v.isLoan && Money.loanTooHigh(v) -> "Loan can't be more than the project cost of ${Fmt.inr(v.finalPrice)}"
+        v.isLoan && v.customerPhotos.isEmpty() -> "Take the GPS photo of the customer at the site (needed for the loan)"
         else -> null
     }
 
@@ -1323,18 +1354,32 @@ class VisitActivity : AppCompatActivity() {
             if (v.subsidyOn && v.bankDocs.isNotEmpty()) addView(kv("Bank proof", "${v.bankDocType.ifBlank { "Photo" }} (${v.bankDocs.size})"))
         })
 
-        body.addView(horizontal {
-            addView(sectionTitle("Customer signature", "On the site visit report and quotation"), lp(0, WRAP, 1f))
-            addView(text("Clear", 14f, Ui.DANGER, bold = true) { setPadding(dp(10), dp(8), dp(6), dp(8)); setOnClickListener { signPad?.clear() } })
-        }, lp().margins(this, t = 20, b = 10))
-        val pad = DrawPad(this, compass = false).apply {
+        body.addView(sectionTitle("Customer signature", "On the site visit report and quotation"), lp().margins(this, t = 20, b = 10))
+        val signFile = VisitStore.file(this, v, "customer_sign.png")
+        body.addView(FrameLayout(this).apply {
             background = rounded(Color.WHITE, dpf(14f), Ui.LINE, dp(1))
-            if (v.customerSign.isNotBlank()) loadFrom(VisitStore.file(context, v, v.customerSign))
-            onDrawn = { signDirty = true }
             clipToOutline = true
-        }
-        signPad = pad
-        body.addView(pad, lp(MATCH, dp(255)))
+            foreground = context.ripple()
+            if (v.customerSign.isNotBlank() && signFile.exists()) {
+                addView(ImageView(context).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    setImageBitmap(android.graphics.BitmapFactory.decodeFile(signFile.absolutePath))
+                }, FrameLayout.LayoutParams(MATCH, MATCH))
+                addView(tag("TAP TO RE-SIGN", Ui.BRAND), FrameLayout.LayoutParams(WRAP, WRAP, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(10), dp(10)) })
+            } else {
+                addView(vertical {
+                    gravity = Gravity.CENTER
+                    addView(icon(R.drawable.ic_edit, Ui.BRAND, 40))
+                    addView(text("Tap for customer to sign", 16f, Ui.BRAND_DARK, bold = true), lp(WRAP, WRAP).margins(context, t = 8))
+                    addView(text("Opens full screen in landscape", 12f, Ui.MUTED), lp(WRAP, WRAP).margins(context, t = 2))
+                }, FrameLayout.LayoutParams(MATCH, MATCH))
+            }
+            setOnClickListener {
+                signLauncher.launch(Intent(context, SignActivity::class.java)
+                    .putExtra(SignActivity.EXTRA_FILE, signFile.absolutePath)
+                    .putExtra(SignActivity.EXTRA_NAME, v.name))
+            }
+        }, lp(MATCH, dp(170)))
         body.addView(text("Visiting officer: ${v.officerName.ifBlank { Officer.name(this) }} · ${v.officerMobile.ifBlank { Officer.mobile(this) }}", 12.5f, Ui.MUTED), lp().margins(this, t = 10))
 
         followUpSection()
@@ -1345,23 +1390,24 @@ class VisitActivity : AppCompatActivity() {
             val r = VisitStore.reportPdf(this, v)
             body.addView(sectionTitle("Share", "Quotation and site visit report"), lp().margins(this, t = 24, b = 4))
             body.addView(pillButton("Send Quotation & Site Visit Report to Customer", 0xFF25D366.toInt(), iconRes = R.drawable.ic_chat) {
-                if (!q.exists() || !r.exists()) { makePdfs(); return@pillButton }
-                VisitStore.whatsapp(this, listOf(q, r), v.mobile, customerMessage())
+                fresh { VisitStore.whatsapp(this, listOf(q, r), v.mobile, customerMessage()) }
             }.also { b -> (b as? LinearLayout)?.let { l -> (l.getChildAt(l.childCount - 1) as? TextView)?.apply { maxLines = 2; textSize = 14f; gravity = Gravity.CENTER } } }, lp().margins(this, t = 10))
             body.addView(horizontal {
-                addView(pillButton("Quotation", Color.WHITE, Ui.BRAND, 46, R.drawable.ic_pdf) { if (q.exists()) VisitStore.open(this@VisitActivity, q) else makePdfs() }.apply {
+                addView(pillButton("Quotation", Color.WHITE, Ui.BRAND, 46, R.drawable.ic_pdf) { fresh { VisitStore.open(this@VisitActivity, q) } }.apply {
                     background = rounded(Color.WHITE, dpf(23f), Ui.BRAND, dp(2))
                 }, lp(0, WRAP, 1f).margins(context, r = 10))
-                addView(pillButton("Site report", Color.WHITE, Ui.BRAND, 46, R.drawable.ic_pdf) { if (r.exists()) VisitStore.open(this@VisitActivity, r) else makePdfs() }.apply {
+                addView(pillButton("Site report", Color.WHITE, Ui.BRAND, 46, R.drawable.ic_pdf) { fresh { VisitStore.open(this@VisitActivity, r) } }.apply {
                     background = rounded(Color.WHITE, dpf(23f), Ui.BRAND, dp(2))
                 }, lp(0, WRAP, 1f))
             }, lp().margins(this, t = 10))
             body.addView(pillButton("Share PDFs + voice notes (office)", Ui.BRAND_LIGHT, Ui.BRAND_DARK, 46, R.drawable.ic_share) {
-                val files = listOf(q, r).filter { it.exists() } +
-                    (v.voiceNotes + v.videos).map { VisitStore.file(this, v, it) }.filter { it.exists() }
-                VisitStore.share(this, files, "Site visit ${v.number} — ${v.name}, ${v.district}")
+                fresh {
+                    val files = listOf(q, r).filter { it.exists() } +
+                        (v.voiceNotes + v.videos).map { VisitStore.file(this, v, it) }.filter { it.exists() }
+                    VisitStore.share(this, files, "Site visit ${v.number} — ${v.name}, ${v.district}")
+                }
             }, lp().margins(this, t = 10))
-            body.addView(text("Changed something? Go back to any step, then tap Re-create PDFs.", 12f, Ui.MUTED) { gravity = Gravity.CENTER }, lp().margins(this, t = 12, b = 4))
+            body.addView(text("PDFs update on their own whenever anything is changed.", 12f, Ui.MUTED) { gravity = Gravity.CENTER }, lp().margins(this, t = 12, b = 4))
         }
     }
 
@@ -1518,26 +1564,60 @@ class VisitActivity : AppCompatActivity() {
             "For any question call ${v.officerName.ifBlank { Officer.name(this) }} on ${v.officerMobile.ifBlank { Officer.mobile(this) }}."
     }
 
-    private fun makePdfs() {
+    /** Fingerprint of everything that goes into the PDFs (signature and sketch files included). */
+    private fun pdfContentKey(): String {
+        val o = v.toJson()
+        listOf("updatedAt", "pdfKey", "quotedAt").forEach { o.remove(it) }
+        val files = listOf("customer_sign.png", "sketch.png").joinToString(",") { VisitStore.file(this, v, it).let { f -> if (f.exists()) "${f.length()}:${f.lastModified()}" else "-" } }
+        return (o.toString() + files).hashCode().toString(16)
+    }
+
+    private fun pdfsStale() = v.pdfKey != pdfContentKey() ||
+        !VisitStore.quotationPdf(this, v).exists() || !VisitStore.reportPdf(this, v).exists()
+
+    private var pdfJob = false
+
+    /** Runs [action] with up-to-date PDFs, refreshing them first if something changed. */
+    private fun fresh(action: () -> Unit) {
+        when {
+            !pdfsStale() -> action()
+            pdfJob -> toast("Updating PDFs… try again in a moment")
+            else -> makePdfs(silent = true, then = action)
+        }
+    }
+
+    /** Creates both PDFs. [silent] = background refresh after a change (no dialog, stays on the same step). */
+    private fun makePdfs(silent: Boolean = false, then: (() -> Unit)? = null) {
         savePads(); save()
-        val dialog = AlertDialog.Builder(this).setMessage("Creating PDFs…").setCancelable(false).show()
-        lifecycleScope.launch {
+        if (silent && pdfJob) return
+        pdfJob = true
+        val dialog = if (silent) null else AlertDialog.Builder(this).setMessage("Creating PDFs…").setCancelable(false).show()
+        val app = applicationContext
+        AppScope.launch {
             val ok = withContext(Dispatchers.IO) {
                 try {
                     if (v.quotedAt == 0L) v.quotedAt = System.currentTimeMillis()
-                    Pdfs(this@VisitActivity).quotation(v, VisitStore.quotationPdf(this@VisitActivity, v))
-                    Pdfs(this@VisitActivity).siteReport(v, VisitStore.reportPdf(this@VisitActivity, v))
+                    val key = pdfContentKey()
+                    Pdfs(app).quotation(v, VisitStore.quotationPdf(app, v))
+                    Pdfs(app).siteReport(v, VisitStore.reportPdf(app, v))
+                    v.pdfKey = key
                     true
                 } catch (e: Exception) {
                     false
                 }
             }
-            dialog.dismiss()
-            if (!ok) { toast("Could not create the PDF"); return@launch }
-            save()
-            Remote.queue(this@VisitActivity, Remote.visitSummary(this@VisitActivity, v))
-            Remote.queueFiles(this@VisitActivity, v)
-            Reminders.schedule(this@VisitActivity, v)
+            pdfJob = false
+            dialog?.dismiss()
+            if (!ok) { if (!isDestroyed) toast("Could not create the PDF"); return@launch }
+            VisitStore.save(app, v)
+            Remote.queue(app, Remote.visitSummary(app, v))
+            Remote.queueFiles(app, v)
+            Reminders.schedule(app, v)
+            if (silent) {
+                if (!isDestroyed && !isFinishing) { if (step == 4) toast("PDFs updated"); then?.invoke() }
+                return@launch
+            }
+            if (isDestroyed) return@launch
             step = 4
             render()
             scroll.scrollTo(0, 0)

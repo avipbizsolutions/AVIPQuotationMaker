@@ -73,6 +73,10 @@
             android:name=".SketchActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
+        <activity
+            android:name=".SignActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
 
         <receiver
             android:name=".ReminderReceiver"
