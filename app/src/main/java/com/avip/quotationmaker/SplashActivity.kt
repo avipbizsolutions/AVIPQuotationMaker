@@ -53,10 +53,10 @@ class SplashActivity : AppCompatActivity() {
                         } catch (_: Exception) {
                         }
                     }
-                    goNext()
+                    blockForUpdate("Couldn't open the installer.")
                 }
                 PackageInstaller.STATUS_SUCCESS -> {}
-                else -> { toast("Update could not be installed"); goNext() }
+                else -> blockForUpdate("The update was not installed.")
             }
         }
     }
@@ -64,7 +64,9 @@ class SplashActivity : AppCompatActivity() {
     private val unknownSourcesLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             val r = pendingRelease
-            if (r != null && Updater.canInstall(this)) lifecycleScope.launch { downloadAndInstall(r) } else goNext()
+            if (r != null && Updater.canInstall(this)) lifecycleScope.launch { downloadAndInstall(r) }
+            else if (r != null) blockForUpdate("Allow AVIP Surya Sales to install updates, then tap Update now.")
+            else goNext()
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -146,11 +148,10 @@ class SplashActivity : AppCompatActivity() {
             val latest = update.await()
             val current = Updater.currentVersionCode(this@SplashActivity)
             if (latest != null && latest.versionCode > current) {
+                // updates are compulsory: the app does not open on an old version
                 pendingRelease = latest
-                if (Updater.canInstall(this@SplashActivity)) { downloadAndInstall(latest); return@launch }
-                if (prefs.getLong("declined_update", 0L) != latest.versionCode) {
-                    askInstallPermission(latest); return@launch
-                }
+                if (Updater.canInstall(this@SplashActivity)) downloadAndInstall(latest) else askInstallPermission(latest)
+                return@launch
             }
             minimum.await()
             if (!fresh && !hadCache) {
@@ -175,31 +176,60 @@ class SplashActivity : AppCompatActivity() {
         val apk = withContext(Dispatchers.IO) {
             Updater.download(this@SplashActivity, release) { pct -> runOnUiThread { progress.progress = pct } }
         }
-        if (apk == null) { toast("Update download failed"); goNext(); return }
+        if (apk == null) { blockForUpdate("Download failed. Check the internet and try again."); return }
         status.text = "Installing update…"
         try {
             withContext(Dispatchers.IO) { Updater.install(this@SplashActivity, apk) }
         } catch (_: Exception) {
-            toast("Update could not be installed"); goNext()
+            blockForUpdate("The update could not be installed.")
         }
     }
 
     private fun askInstallPermission(release: ReleaseInfo) {
         AlertDialog.Builder(this)
             .setTitle("New version available")
-            .setMessage("Version ${release.versionName} is ready. Allow AVIP Surya Sales to install its own updates? This is needed only once.")
+            .setMessage("Version ${release.versionName} is required to continue. Allow AVIP Surya Sales to install its own updates? This is needed only once.")
             .setCancelable(false)
             .setPositiveButton("Allow") { _, _ ->
                 unknownSourcesLauncher.launch(
                     Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
                 )
             }
-            .setNegativeButton("Later") { _, _ ->
-                prefs.edit().putLong("declined_update", release.versionCode).apply()
-                if (Catalog.isLoaded) goNext() else start()
-            }
+            .setNegativeButton("Not now") { _, _ -> blockForUpdate("This update is required to keep using the app.") }
             .show()
     }
+
+    /** Update available but not installed: the app stays here until it is updated. */
+    private fun blockForUpdate(reason: String) {
+        val r = pendingRelease ?: run { goNext(); return }
+        if (isFinishing) return
+        progress.visibility = View.GONE
+        status.text = "Update required — version ${r.versionName}\n$reason"
+        retry.visibility = View.GONE
+        updateBox?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+        val box = vertical {
+            gravity = Gravity.CENTER_HORIZONTAL
+            addView(pillButton("Update now", Ui.SUN, Ui.TEXT) {
+                if (Updater.canInstall(this@SplashActivity)) lifecycleScope.launch {
+                    progress.visibility = View.VISIBLE
+                    (updateBox?.parent as? android.view.ViewGroup)?.removeView(updateBox)
+                    downloadAndInstall(r)
+                } else askInstallPermission(r)
+            }, lp(dp(200), WRAP))
+            addView(text("Download from website", 13f, Color.WHITE, bold = true) {
+                setPadding(dp(10), dp(12), dp(10), dp(6))
+                setOnClickListener {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/avipbizsolutions/AVIPQuotationMaker/releases/latest/download/AVIP-Surya-Sales.apk")))
+                    } catch (_: Exception) {}
+                }
+            })
+        }
+        updateBox = box
+        (status.parent as android.view.ViewGroup).let { p -> p.addView(box, p.indexOfChild(status) + 1, lp(WRAP, WRAP).margins(this, t = 16)) }
+    }
+
+    private var updateBox: View? = null
 
     private fun goNext() {
         if (leaving || isFinishing) return

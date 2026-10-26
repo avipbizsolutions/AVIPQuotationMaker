@@ -54,12 +54,14 @@ class MainActivity : AppCompatActivity() {
             val latest = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Updater.fetchLatest() } ?: return@launch
             if (latest.versionCode <= Updater.currentVersionCode(this@MainActivity) || isFinishing) return@launch
             androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
-                .setTitle("Update ready")
-                .setMessage("Version ${latest.versionName} of AVIP Surya Sales is available. Update now? It takes a few seconds.")
-                .setPositiveButton("Update") { _, _ ->
+                .setTitle("Update required")
+                .setMessage("Version ${latest.versionName} of AVIP Surya Sales is available and must be installed to continue. It takes a few seconds.")
+                .setCancelable(false)
+                .setPositiveButton("Update now") { _, _ ->
                     startActivity(Intent(this@MainActivity, SplashActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK))
+                    finish()
                 }
-                .setNegativeButton("Later", null).show()
+                .show()
         }
     }
 
