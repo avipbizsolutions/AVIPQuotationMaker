@@ -533,7 +533,7 @@ class Pdfs(private val context: Context) {
             "Map" to (if (v.hasLocation) String.format(Locale.US, "maps.google.com/?q=%.6f,%.6f", v.lat, v.lng) else ""),
             "Roof type" to v.roofType,
             "Building height" to v.floors,
-            "Shadow-free area" to (if (area > 0) "${v.roofLength} × ${v.roofWidth} ft  (≈ ${area.toInt()} sq ft)" else ""),
+            "Shadow-free area" to (if (area > 0) "E–W ${v.roofLength} ft × N–S ${v.roofWidth} ft  (≈ ${area.toInt()} sq ft)" else ""),
             "Shading" to v.shading,
             "Structure height" to v.structureHeight,
             "Cable run (inverter → meter)" to v.cableRun.let { if (it.isBlank()) "" else "$it m" },

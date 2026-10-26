@@ -237,8 +237,8 @@ class Visit(
     var lng = 0.0
     var roofType = ""
     var floors = ""
-    var roofLength = ""
-    var roofWidth = ""
+    var roofLength = "" // East–West, feet
+    var roofWidth = "" // North–South, feet
     var shading = ""
     var structureHeight = ""
     var cableRun = ""

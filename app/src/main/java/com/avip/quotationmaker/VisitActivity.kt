@@ -460,10 +460,18 @@ class VisitActivity : AppCompatActivity() {
                 addView(icon(R.drawable.ic_ruler, Ui.BRAND, 18))
                 addView(text("Shadow-free roof area (feet)", 13f, Ui.MUTED, bold = true), lp(0, WRAP, 1f).margins(context, l = 6))
             })
+            // measured along the compass directions: panels face south, rows run east–west
             addView(horizontal {
-                addView(input("Length", InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL, v.roofLength).apply { onChange { v.roofLength = it; updateArea() } }, lp(0, WRAP, 1f))
-                addView(text("×", 20f, Ui.MUTED, bold = true) { gravity = Gravity.CENTER }, lp(dp(32), WRAP))
-                addView(input("Width", InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL, v.roofWidth).apply { onChange { v.roofWidth = it; updateArea() } }, lp(0, WRAP, 1f))
+                gravity = Gravity.BOTTOM
+                addView(vertical {
+                    addView(text("East ↔ West", 12.5f, Ui.BRAND_DARK, bold = true), lp().margins(context, b = 4))
+                    addView(input("feet", InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL, v.roofLength).apply { onChange { v.roofLength = it; updateArea() } })
+                }, lp(0, WRAP, 1f))
+                addView(text("×", 20f, Ui.MUTED, bold = true) { gravity = Gravity.CENTER }, lp(dp(32), dp(48)))
+                addView(vertical {
+                    addView(text("North ↕ South", 12.5f, Ui.BRAND_DARK, bold = true), lp().margins(context, b = 4))
+                    addView(input("feet", InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL, v.roofWidth).apply { onChange { v.roofWidth = it; updateArea() } })
+                }, lp(0, WRAP, 1f))
             }, lp().margins(context, t = 8))
             addView(areaNote, lp().margins(context, t = 8))
             addView(text("Shading", 13f, Ui.MUTED, bold = true), lp().margins(context, t = 12, b = 6))
