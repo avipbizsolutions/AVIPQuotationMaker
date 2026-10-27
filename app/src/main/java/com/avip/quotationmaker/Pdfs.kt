@@ -509,12 +509,13 @@ class Pdfs(private val context: Context) {
             "Bank proof for subsidy" to (if (v.bankDocs.isEmpty() || !v.subsidyOn) "" else "${v.bankDocType.ifBlank { "Photo" }} — ${v.bankDocs.size} photo(s) attached"),
             "PAN" to (if (v.isLoan) v.pan else ""),
             "Aadhaar" to (if (v.isLoan) v.aadhaar else ""),
+            "Email" to (if (v.isLoan) v.email else ""),
             "Consumer / CA No" to v.caNo,
             "DISCOM · Connection" to listOf(v.discom, v.phase).filter { it.isNotBlank() }.joinToString(" · "),
             "Smart meter" to v.smartMeter,
             "Sanctioned load" to v.sanctionedLoad.let { if (it.isBlank()) "" else "$it kW" },
             "Monthly bill" to v.monthlyBill.let { if (it.isBlank()) "" else "₹$it" },
-        ).filter { it.second.isNotBlank() || it.first !in setOf("PAN", "Aadhaar", "Bank proof for subsidy") })
+        ).filter { it.second.isNotBlank() || it.first !in setOf("PAN", "Aadhaar", "Email", "Bank proof for subsidy") })
 
         heading("Proposed solar system")
         grid(listOf(

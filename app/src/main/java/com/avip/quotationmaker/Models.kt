@@ -216,6 +216,7 @@ class Visit(
     var pincode = ""
     var pan = ""
     var aadhaar = ""
+    var email = "" // customer's email (required for a bank loan)
     var caNo = ""
     var discom = ""
     var phase = ""
@@ -285,7 +286,7 @@ class Visit(
     fun toJson(): JSONObject = JSONObject().apply {
         put("number", number); put("createdAt", createdAt); put("updatedAt", updatedAt); put("quotedAt", quotedAt)
         put("name", name); put("mobile", mobile); put("address", address); put("district", district)
-        put("pincode", pincode); put("pan", pan); put("aadhaar", aadhaar); put("caNo", caNo)
+        put("pincode", pincode); put("pan", pan); put("aadhaar", aadhaar); put("email", email); put("caNo", caNo)
         put("discom", discom); put("phase", phase); put("sanctionedLoad", sanctionedLoad); put("monthlyBill", monthlyBill)
         put("lat", lat); put("lng", lng); put("roofType", roofType); put("floors", floors)
         put("roofLength", roofLength); put("roofWidth", roofWidth); put("shading", shading)
@@ -309,7 +310,7 @@ class Visit(
             updatedAt = o.optLong("updatedAt", createdAt); quotedAt = o.optLong("quotedAt")
             name = o.optString("name"); mobile = o.optString("mobile"); address = o.optString("address")
             district = o.optString("district"); pincode = o.optString("pincode"); pan = o.optString("pan")
-            aadhaar = o.optString("aadhaar"); caNo = o.optString("caNo"); discom = o.optString("discom")
+            aadhaar = o.optString("aadhaar"); email = o.optString("email"); caNo = o.optString("caNo"); discom = o.optString("discom")
             phase = o.optString("phase"); sanctionedLoad = o.optString("sanctionedLoad"); monthlyBill = o.optString("monthlyBill")
             lat = o.optDouble("lat", 0.0); lng = o.optDouble("lng", 0.0)
             roofType = o.optString("roofType"); floors = o.optString("floors")

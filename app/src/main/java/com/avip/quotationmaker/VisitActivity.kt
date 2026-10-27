@@ -1230,6 +1230,8 @@ class VisitActivity : AppCompatActivity() {
                 idField(this, "PAN *", v.pan, "ABCDE1234F", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS, 10, "pan", v.panDocs) { v.pan = it.uppercase() }
                 idField(this, "Aadhaar *", v.aadhaar, "12 digits", InputType.TYPE_CLASS_NUMBER, 12, "aadhaar", v.aadhaarDocs) { v.aadhaar = it }
                 addView(text("Aadhaar prints only on the internal site visit report, never on the quotation.", 11.5f, Ui.MUTED), lp().margins(context, t = 6))
+                field(this, "Customer email *", v.email, "name@example.com", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, R.drawable.ic_chat) { v.email = it.trim() }
+                addView(text("Needed by the bank for the loan application.", 11.5f, Ui.MUTED), lp().margins(context, t = 6))
                 // bank requirement: the customer photographed at the site, GPS-stamped
                 addView(text("Customer at site — GPS photo *", 13f, Ui.MUTED, bold = true), lp().margins(context, t = 14, b = 6))
                 val hasCust = v.customerPhotos.isNotEmpty()
@@ -1329,6 +1331,8 @@ class VisitActivity : AppCompatActivity() {
         v.isLoan && Money.loanTooHigh(v) -> "Loan can't be more than the project cost of ${Fmt.inr(v.finalPrice)}"
         v.isLoan && v.panDocs.isEmpty() -> "Attach the PAN card photo (needed for the loan)"
         v.isLoan && v.aadhaarDocs.isEmpty() -> "Attach the Aadhaar photo (needed for the loan)"
+        v.isLoan && !android.util.Patterns.EMAIL_ADDRESS.matcher(v.email.trim()).matches() ->
+            if (v.email.isBlank()) "Enter the customer's email (needed for the loan)" else "Check the customer's email address"
         v.isLoan && v.customerPhotos.isEmpty() -> "Take the GPS photo of the customer at the site (needed for the loan)"
         else -> null
     }

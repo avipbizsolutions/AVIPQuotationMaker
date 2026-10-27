@@ -201,7 +201,7 @@ object Remote {
             .put("district", v.district).put("pincode", v.pincode).put("caNo", v.caNo).put("discom", v.discom)
             .put("sanctionedLoad", v.sanctionedLoad).put("monthlyBill", v.monthlyBill)
             .put("funding", v.funding)
-            .put("pan", if (v.isLoan) v.pan else "").put("aadhaarLast4", if (v.isLoan) v.aadhaar.filter { it.isDigit() }.takeLast(4) else "")
+            .put("pan", if (v.isLoan) v.pan else "").put("email", if (v.isLoan) v.email else "").put("aadhaarLast4", if (v.isLoan) v.aadhaar.filter { it.isDigit() }.takeLast(4) else "")
             .put("roof", listOf(v.roofType, v.floors).filter { it.isNotBlank() }.joinToString(", "))
             .put("roofSize", if (v.roofLength.isNotBlank() && v.roofWidth.isNotBlank()) "E-W ${v.roofLength} ft x N-S ${v.roofWidth} ft" else "")
             .put("shading", v.shading).put("structure", listOf(v.structureType, if (v.structureType == "Magnelis") v.mountingLayout else "").filter { it.isNotBlank() }.joinToString(" "))
@@ -220,6 +220,7 @@ object Remote {
             .put("notes", listOf(
                 when { v.nameCorrection -> "Name correction (free)"; v.nameTransferFee > 0 -> "Name transfer (+${v.nameTransferFee.toInt()})"; else -> "" },
                 if (v.smartMeter.isNotBlank()) "Smart meter: ${v.smartMeter}" else "",
+                if (v.isLoan && v.email.isNotBlank()) "Email: ${v.email}" else "",
                 if (v.leadStatus == "Converted" && v.installAt > 0) "Installation wanted: ${day.format(Date(v.installAt))}" else "",
                 v.siteNotes,
             ).filter { it.isNotBlank() }.joinToString(" | ")).put("voiceNotes", v.voiceNotes.size).put("photos", v.photos.size)
