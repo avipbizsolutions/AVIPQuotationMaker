@@ -100,6 +100,41 @@ function saveVisit(book, d) {
   ];
   if (row > 0) sheet.getRange(row, 1, 1, values.length).setValues([values]);
   else sheet.appendRow(values);
+
+  // Converted with an installation date → a Draft site in AVIP Solar Install Check
+  if (clean(d.leadStatus) === 'Converted') {
+    const m = clean(d.notes, 500).match(/Installation wanted: (\d{4}-\d{2}-\d{2})/);
+    if (m) pushToInstallCheck(d, m[1], keep ? keep[COL['Site Report PDF'] - 1] : '');
+  }
+}
+
+/**
+ * Sends a converted visit to AVIP Solar Install Check. Needs two Script Properties
+ * (Apps Script → Project Settings → Script Properties):
+ *   INSTALL_CHECK_URL = the Install Check web app /exec URL
+ *   INSTALL_CHECK_KEY = the link key printed by Install Check's "setup"
+ * Without them nothing is sent. A failure never stops the visit from being logged.
+ */
+function pushToInstallCheck(d, installDate, reportPdf) {
+  const p = PropertiesService.getScriptProperties();
+  const url = p.getProperty('INSTALL_CHECK_URL');
+  const key = p.getProperty('INSTALL_CHECK_KEY');
+  if (!url || !key) return;
+  try {
+    UrlFetchApp.fetch(url, {
+      method: 'post', contentType: 'text/plain', muteHttpExceptions: true, followRedirects: true,
+      payload: JSON.stringify({
+        key: 'avip-install-9Kp2', kind: 'salesVisit', linkKey: key,
+        visitNo: clean(d.number), salesPerson: clean(d.officer), customer: clean(d.customer),
+        mobile: clean(d.mobile), address: clean(d.address, 300), district: clean(d.district),
+        location: clean(d.location), kwp: num(d.kwp), systemType: clean(d.systemType),
+        system: clean(d.system), discom: clean(d.discom), caNo: clean(d.caNo),
+        visitDate: clean(d.visitDate), installDate: installDate, reportPdf: clean(reportPdf),
+      }),
+    });
+  } catch (err) {
+    console.log('Install Check push failed: ' + err);
+  }
 }
 
 function saveFollowUp(book, d) {
@@ -169,6 +204,21 @@ function saveFile(book, d) {
     sheet.getRange(row, col).setValue(sub.getUrl()); // folder holds all notes
   } else {
     sheet.getRange(row, col).setValue(file.getUrl());
+  }
+  // a converted visit's report reaches Install Check too
+  if (col === COL['Site Report PDF']) {
+    const r = sheet.getRange(row, 1, 1, VISIT_HEADERS.length).getValues()[0];
+    const m = String(r[COL['Site Notes'] - 1]).match(/Installation wanted: (\d{4}-\d{2}-\d{2})/);
+    if (String(r[COL['Lead Status'] - 1]) === 'Converted' && m) {
+      pushToInstallCheck({
+        number: r[COL['Visit No'] - 1], officer: r[COL['Sales Executive'] - 1], customer: r[COL['Customer'] - 1],
+        mobile: r[COL['WhatsApp'] - 1], address: r[COL['Address'] - 1], district: r[COL['District'] - 1],
+        location: String(r[COL['Map'] - 1]).replace('https://maps.google.com/?q=', ''), kwp: r[COL['kWp'] - 1],
+        systemType: r[COL['System Type'] - 1], system: r[COL['System'] - 1], discom: r[COL['DISCOM'] - 1],
+        caNo: r[COL['CA No'] - 1], visitDate: r[COL['Visit Date'] - 1] instanceof Date
+          ? Utilities.formatDate(r[COL['Visit Date'] - 1], 'Asia/Kolkata', 'yyyy-MM-dd') : String(r[COL['Visit Date'] - 1]),
+      }, m[1], file.getUrl());
+    }
   }
 }
 
