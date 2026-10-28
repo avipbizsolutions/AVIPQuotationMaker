@@ -125,7 +125,8 @@ function pushToInstallCheck(d, installDate, reportPdf) {
       method: 'post', contentType: 'text/plain', muteHttpExceptions: true, followRedirects: true,
       payload: JSON.stringify({
         key: 'avip-install-9Kp2', kind: 'salesVisit', linkKey: key,
-        visitNo: clean(d.number), salesPerson: clean(d.officer), customer: clean(d.customer),
+        visitNo: clean(d.number), salesPerson: clean(d.officer), salesMobile: clean(d.officerMobile),
+        customer: clean(d.customer),
         mobile: clean(d.mobile), address: clean(d.address, 300), district: clean(d.district),
         location: clean(d.location), kwp: num(d.kwp), systemType: clean(d.systemType),
         system: clean(d.system), discom: clean(d.discom), caNo: clean(d.caNo),
@@ -211,7 +212,8 @@ function saveFile(book, d) {
     const m = String(r[COL['Site Notes'] - 1]).match(/Installation wanted: (\d{4}-\d{2}-\d{2})/);
     if (String(r[COL['Lead Status'] - 1]) === 'Converted' && m) {
       pushToInstallCheck({
-        number: r[COL['Visit No'] - 1], officer: r[COL['Sales Executive'] - 1], customer: r[COL['Customer'] - 1],
+        number: r[COL['Visit No'] - 1], officer: r[COL['Sales Executive'] - 1], officerMobile: r[COL['Exec Mobile'] - 1],
+        customer: r[COL['Customer'] - 1],
         mobile: r[COL['WhatsApp'] - 1], address: r[COL['Address'] - 1], district: r[COL['District'] - 1],
         location: String(r[COL['Map'] - 1]).replace('https://maps.google.com/?q=', ''), kwp: r[COL['kWp'] - 1],
         systemType: r[COL['System Type'] - 1], system: r[COL['System'] - 1], discom: r[COL['DISCOM'] - 1],
