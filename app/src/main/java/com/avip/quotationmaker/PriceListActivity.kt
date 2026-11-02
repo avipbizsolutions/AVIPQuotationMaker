@@ -14,6 +14,7 @@ class PriceListActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Lang.load(this)
         val root = vertical { setBackgroundColor(Ui.BG) }
         root.addView(topBar("Price List", "Prices include GST"))
         body = vertical { setPadding(dp(16), dp(14), dp(16), dp(24)) }

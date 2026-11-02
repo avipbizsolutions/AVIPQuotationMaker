@@ -83,7 +83,7 @@ fun Context.text(
     value: CharSequence, size: Float = 14f, color: Int = Ui.TEXT,
     bold: Boolean = false, block: TextView.() -> Unit = {},
 ) = TextView(this).apply {
-    text = value
+    text = L(value)
     setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
     setTextColor(color)
     if (bold) typeface = Typeface.DEFAULT_BOLD
@@ -131,7 +131,7 @@ fun Context.pillButton(
 
 fun Context.input(hint: String, type: Int = InputType.TYPE_CLASS_TEXT, value: String = "", maxLen: Int = 0) =
     EditText(this).apply {
-        this.hint = hint
+        this.hint = L(hint)
         inputType = type
         setText(value)
         setTextColor(Ui.TEXT)
@@ -292,4 +292,53 @@ fun Context.tag(label: String, bg: Int, fg: Int = Color.WHITE): TextView = text(
     background = rounded(bg, dpf(10f))
     setPadding(dp(8), dp(3), dp(8), dp(3))
     letterSpacing = 0.05f
+}
+
+/**
+ * Screen language: Hindi-English (default, like the other AVIP apps) or English.
+ * Chosen on the login and home screens and remembered on the phone.
+ */
+object Lang {
+    @Volatile var english = false
+        private set
+
+    fun load(c: Context) {
+        english = c.getSharedPreferences("settings", Context.MODE_PRIVATE).getBoolean("english", false)
+    }
+
+    fun set(c: Context, on: Boolean) {
+        c.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putBoolean("english", on).apply()
+        english = on
+    }
+}
+
+/** On-screen text in the chosen language (English stays as written; Hindi-English from [Hindi]). */
+fun L(s: CharSequence?): CharSequence {
+    if (s == null) return ""
+    if (Lang.english || s !is String) return s
+    Hindi.words[s]?.let { return it }
+    for ((en, hi) in Hindi.pieces) {
+        if (s.startsWith(en)) return hi + s.substring(en.length)
+        if (s.endsWith(en)) return s.substring(0, s.length - en.length) + hi
+    }
+    return s
+}
+
+/** Small pill that switches between Hindi-English and English, then redraws the screen. */
+fun Activity.langToggle(onDark: Boolean = true): View {
+    val tv = TextView(this)
+    tv.text = if (Lang.english) "हिंदी" else "English"
+    tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+    tv.setTextColor(if (onDark) Color.WHITE else Ui.TEXT)
+    tv.typeface = Typeface.DEFAULT_BOLD
+    tv.gravity = Gravity.CENTER
+    tv.minHeight = dp(36)
+    tv.setPadding(dp(12), dp(6), dp(12), dp(6))
+    tv.background = rounded(Color.TRANSPARENT, dpf(18f), if (onDark) 0x99FFFFFF.toInt() else Ui.LINE, dp(1))
+    tv.contentDescription = if (Lang.english) "Switch to Hindi-English" else "Switch to English"
+    tv.setOnClickListener {
+        Lang.set(this, !Lang.english)
+        recreate()
+    }
+    return tv
 }

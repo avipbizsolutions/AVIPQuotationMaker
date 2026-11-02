@@ -52,10 +52,10 @@ fun Activity.visitRow(v: Visit, onChanged: () -> Unit = {}): View = card(14) {
                 setPadding(dp(8), dp(8), dp(8), dp(8))
                 setOnClickListener {
                     AlertDialog.Builder(this@visitRow)
-                        .setTitle("Delete draft of ${v.name.ifBlank { v.number }}?")
-                        .setMessage("Details, photos and voice notes of this draft will be removed from this phone.")
-                        .setPositiveButton("Delete") { _, _ -> VisitStore.delete(this@visitRow, v); onChanged() }
-                        .setNegativeButton("Cancel", null).show()
+                        .setTitle(L("Delete draft of ${v.name.ifBlank { v.number }}?"))
+                        .setMessage(L("Details, photos and voice notes of this draft will be removed from this phone."))
+                        .setPositiveButton(L("Delete")) { _, _ -> VisitStore.delete(this@visitRow, v); onChanged() }
+                        .setNegativeButton(L("Cancel"), null).show()
                 }
             })
             if (v.mobile.filter { it.isDigit() }.length >= 10) addView(horizontal {

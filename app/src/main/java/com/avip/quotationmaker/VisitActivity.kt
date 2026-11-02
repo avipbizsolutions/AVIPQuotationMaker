@@ -129,6 +129,7 @@ class VisitActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Lang.load(this)
         val number = intent.getStringExtra(EXTRA_NUMBER) ?: savedInstanceState?.getString(EXTRA_NUMBER)
         v = number?.let { VisitStore.load(this, it) } ?: VisitStore.create(this).also { VisitStore.save(this, it) }
         if (number != null && v.isQuoted) step = 4
@@ -282,16 +283,16 @@ class VisitActivity : AppCompatActivity() {
 
     private fun discardDraft() {
         AlertDialog.Builder(this)
-            .setTitle("Delete this draft?")
-            .setMessage("${v.name.ifBlank { v.number }} — details, photos and voice notes will be removed from this phone.")
-            .setPositiveButton("Delete") { _, _ ->
+            .setTitle(L("Delete this draft?"))
+            .setMessage(L("${v.name.ifBlank { v.number }} — details, photos and voice notes will be removed from this phone."))
+            .setPositiveButton(L("Delete")) { _, _ ->
                 stopRecording(); stopPlaying()
                 Reminders.cancel(this, v.number)
                 VisitStore.delete(this, v)
                 toast("Draft deleted")
                 finish()
             }
-            .setNegativeButton("Cancel", null).show()
+            .setNegativeButton(L("Cancel"), null).show()
     }
 
     private fun next() {
@@ -463,7 +464,7 @@ class VisitActivity : AppCompatActivity() {
         fun updateArea() {
             val a = (Fmt.parse(v.roofLength) ?: 0.0) * (Fmt.parse(v.roofWidth) ?: 0.0)
             val perKw = Catalog.settings.num("sqft_per_kw", 100.0)
-            areaNote.text = if (a > 0) "≈ ${a.roundToInt()} sq ft shadow-free  ·  fits about ${Fmt.one(a / perKw)} kW" else ""
+            areaNote.text = L(if (a > 0) "≈ ${a.roundToInt()} sq ft shadow-free  ·  fits about ${Fmt.one(a / perKw)} kW" else "")
             areaNote.visibility = if (a > 0) View.VISIBLE else View.GONE
         }
         body.addView(card {
@@ -610,9 +611,9 @@ class VisitActivity : AppCompatActivity() {
                             background = circle(0x99000000.toInt())
                             setPadding(dp(5), dp(5), dp(5), dp(5))
                             setOnClickListener {
-                                AlertDialog.Builder(this@VisitActivity).setTitle("Remove this photo?")
-                                    .setPositiveButton("Remove") { _, _ -> f.delete(); list.remove(name); save(); render() }
-                                    .setNegativeButton("Cancel", null).show()
+                                AlertDialog.Builder(this@VisitActivity).setTitle(L("Remove this photo?"))
+                                    .setPositiveButton(L("Remove")) { _, _ -> f.delete(); list.remove(name); save(); render() }
+                                    .setNegativeButton(L("Cancel"), null).show()
                             }
                         }, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.TOP or Gravity.END).apply { setMargins(0, dp(6), dp(6), 0) })
                     }
@@ -731,7 +732,7 @@ class VisitActivity : AppCompatActivity() {
     }
 
     private fun addVideo() {
-        AlertDialog.Builder(this).setTitle("Add site video")
+        AlertDialog.Builder(this).setTitle(L("Add site video"))
             .setItems(arrayOf("Record video", "Choose from gallery")) { _, which ->
                 if (which == 0) withCamera {
                     val f = VisitStore.file(this, v, "video_${System.currentTimeMillis()}.mp4")
@@ -784,9 +785,9 @@ class VisitActivity : AppCompatActivity() {
                             background = circle(0x99000000.toInt())
                             setPadding(dp(5), dp(5), dp(5), dp(5))
                             setOnClickListener {
-                                AlertDialog.Builder(this@VisitActivity).setTitle("Remove this video?")
-                                    .setPositiveButton("Remove") { _, _ -> f.delete(); v.videos.remove(name); save(); render() }
-                                    .setNegativeButton("Cancel", null).show()
+                                AlertDialog.Builder(this@VisitActivity).setTitle(L("Remove this video?"))
+                                    .setPositiveButton(L("Remove")) { _, _ -> f.delete(); v.videos.remove(name); save(); render() }
+                                    .setNegativeButton(L("Cancel"), null).show()
                             }
                         }, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.TOP or Gravity.END).apply { setMargins(0, dp(6), dp(6), 0) })
                         cell.setOnClickListener {
@@ -829,9 +830,9 @@ class VisitActivity : AppCompatActivity() {
                 addView(icon(R.drawable.ic_delete, Ui.DANGER, 36).apply {
                     setPadding(dp(8), dp(8), dp(8), dp(8))
                     setOnClickListener {
-                        AlertDialog.Builder(this@VisitActivity).setTitle("Delete voice note ${i + 1}?")
-                            .setPositiveButton("Delete") { _, _ -> stopPlaying(); f.delete(); v.voiceNotes.remove(name); save(); render() }
-                            .setNegativeButton("Cancel", null).show()
+                        AlertDialog.Builder(this@VisitActivity).setTitle(L("Delete voice note ${i + 1}?"))
+                            .setPositiveButton(L("Delete")) { _, _ -> stopPlaying(); f.delete(); v.voiceNotes.remove(name); save(); render() }
+                            .setNegativeButton(L("Cancel"), null).show()
                     }
                 })
             }, lp().margins(context, b = 8))
@@ -1074,13 +1075,13 @@ class VisitActivity : AppCompatActivity() {
                 gstText?.text = "GST billing: ${Fmt.num(g.goodsShare)}% @ ${Fmt.num(g.goodsRate)}% = ${Fmt.inr(g.goodsGst)} · " +
                     "${Fmt.num(100 - g.goodsShare)}% @ ${Fmt.num(g.serviceRate)}% = ${Fmt.inr(g.serviceGst)} · total GST ${Fmt.inr(g.totalGst)}"
             }
-            discText.text = if (v.discount > 0) "− ${Fmt.inr(v.discount)}" else "No discount"
+            discText.text = L(if (v.discount > 0) "− ${Fmt.inr(v.discount)}" else "No discount")
             val sub = Money.subsidy(p, v.subsidyOn)
             bankBox?.visibility = if (v.subsidyOn) View.VISIBLE else View.GONE
             effText.text = Fmt.inr(v.finalPrice - sub)
-            effSub.text = if (sub > 0) "after ${Fmt.inr(sub)} total subsidy" else "no subsidy applied"
+            effSub.text = L(if (sub > 0) "after ${Fmt.inr(sub)} total subsidy" else "no subsidy applied")
             val pb = Money.paybackYears(v)
-            paybackText.text = if (pb > 0) "${Fmt.one(pb)} yrs" else "—"
+            paybackText.text = L(if (pb > 0) "${Fmt.one(pb)} yrs" else "—")
             centralText.text = Fmt.inr(Money.central(p, v.subsidyOn))
             stateText.text = Fmt.inr(Money.state(p, v.subsidyOn))
             loanRefresh?.invoke()
@@ -1203,17 +1204,17 @@ class VisitActivity : AppCompatActivity() {
             val error = text("", 12.5f, Ui.DANGER, bold = true)
             loanRefresh = {
                 val tooHigh = Money.loanTooHigh(v)
-                error.text = if (tooHigh) "Loan can't be more than the project cost of ${Fmt.inr(v.finalPrice)}" else ""
+                error.text = L(if (tooHigh) "Loan can't be more than the project cost of ${Fmt.inr(v.finalPrice)}" else "")
                 error.visibility = if (tooHigh) View.VISIBLE else View.GONE
                 val amt = Money.loanAmount(v)
                 val emi = Money.emi(v)
                 val rate = Money.loanRate(amt)
                 rateText.text = "Interest ${Fmt.num(rate)}% p.a." + if (amt > 0) (if (amt <= Money.slab()) "  (loan up to ${Fmt.inr(Money.slab())})" else "  (loan above ${Fmt.inr(Money.slab())})") else ""
-                emiText.text = if (emi > 0) "${Fmt.inr(emi)} / month" else "—"
+                emiText.text = L(if (emi > 0) "${Fmt.inr(emi)} / month" else "—")
                 loanText.text = if (amt > 0) "Loan ${Fmt.inr(amt)} for ${v.loanYears} yrs · total interest ${Fmt.inr(emi * v.loanYears * 12 - amt)}" +
                     "\nCustomer's own contribution ${Fmt.inr(Money.downPayment(v))}" else "Enter the loan amount"
                 val save = Money.yearlySaving(p) / 12
-                compare.text = if (emi > 0 && save > 0) "Bill saving ${Fmt.inr(save)}/month covers ${((save / emi) * 100).roundToInt().coerceAtMost(999)}% of the EMI" else ""
+                compare.text = L(if (emi > 0 && save > 0) "Bill saving ${Fmt.inr(save)}/month covers ${((save / emi) * 100).roundToInt().coerceAtMost(999)}% of the EMI" else "")
             }
             body.addView(card {
                 addView(horizontal {
@@ -1550,9 +1551,9 @@ class VisitActivity : AppCompatActivity() {
             nextText.setOnClickListener { pickFollowUpDate { d -> next = Reminders.tenAm(d); nextText.text = "Next follow-up: ${dayFmt.format(java.util.Date(next))}, 10 AM" } }
             addView(nextText)
         }
-        val dialog = AlertDialog.Builder(this).setTitle("Log follow-up call").setView(box)
-            .setPositiveButton("Save", null)
-            .setNegativeButton("Cancel", null).create()
+        val dialog = AlertDialog.Builder(this).setTitle(L("Log follow-up call")).setView(box)
+            .setPositiveButton(L("Save"), null)
+            .setNegativeButton(L("Cancel"), null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 if (outcome.isBlank()) { toast("Pick the call result"); return@setOnClickListener }
@@ -1616,7 +1617,7 @@ class VisitActivity : AppCompatActivity() {
         savePads(); save()
         if (silent && pdfJob) return
         pdfJob = true
-        val dialog = if (silent) null else AlertDialog.Builder(this).setMessage("Creating PDFs…").setCancelable(false).show()
+        val dialog = if (silent) null else AlertDialog.Builder(this).setMessage(L("Creating PDFs…")).setCancelable(false).show()
         val app = applicationContext
         AppScope.launch {
             val ok = withContext(Dispatchers.IO) {
@@ -1674,7 +1675,7 @@ class VisitActivity : AppCompatActivity() {
         }
         locating = true
         if (step == 1) render()
-        val wait = if (silent) null else AlertDialog.Builder(this).setMessage("Getting GPS fix…\nStand in the open for best accuracy.").setCancelable(true).show()
+        val wait = if (silent) null else AlertDialog.Builder(this).setMessage(L("Getting GPS fix…\nStand in the open for best accuracy.")).setCancelable(true).show()
         var done = false
         val handler = Handler(Looper.getMainLooper())
         lateinit var listener: LocationListener
@@ -1757,5 +1758,5 @@ class VisitActivity : AppCompatActivity() {
         f
     } catch (_: Exception) { null }
 
-    private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
+    private fun toast(m: String) = Toast.makeText(this, L(m), Toast.LENGTH_LONG).show()
 }

@@ -7,6 +7,10 @@ quotation before leaving — no more filling the paper form and sending the quot
 **Download the latest APK:**
 https://github.com/avipbizsolutions/AVIPQuotationMaker/releases/latest/download/AVIP-Solar-Sales.apk
 
+Screens in Hindi-English (default) or English: switch with the **English / हिंदी** button on the
+home and login screens; each phone remembers its choice. Quotations, reports and messages to
+customers are not affected. Hindi-English wording lives in `Hindi.kt`.
+
 ## The visit, step by step
 1. **Customer** — name, WhatsApp number, address, district, PIN, DISCOM (NBPDCL / SBPDCL),
    CA number, single / three phase, sanctioned load, monthly bill, PAN, Aadhaar.

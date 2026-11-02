@@ -16,6 +16,7 @@ class HistoryActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Lang.load(this)
         val root = vertical { setBackgroundColor(Ui.BG) }
         root.addView(topBar("All visits", "Tap to open · long-press to delete"))
         val head = vertical { setPadding(dp(16), dp(12), dp(16), dp(4)) }
@@ -56,10 +57,10 @@ class HistoryActivity : AppCompatActivity() {
             list.addView(visitRow(v) { fill() }.apply {
                 setOnLongClickListener {
                     AlertDialog.Builder(this@HistoryActivity)
-                        .setTitle("Delete ${v.name.ifBlank { v.number }}?")
-                        .setMessage("Photos, signature and PDFs of this visit will be removed from this phone.")
-                        .setPositiveButton("Delete") { _, _ -> VisitStore.delete(this@HistoryActivity, v); fill() }
-                        .setNegativeButton("Cancel", null).show()
+                        .setTitle(L("Delete ${v.name.ifBlank { v.number }}?"))
+                        .setMessage(L("Photos, signature and PDFs of this visit will be removed from this phone."))
+                        .setPositiveButton(L("Delete")) { _, _ -> VisitStore.delete(this@HistoryActivity, v); fill() }
+                        .setNegativeButton(L("Cancel"), null).show()
                     true
                 }
             }, lp().margins(this, b = 10))

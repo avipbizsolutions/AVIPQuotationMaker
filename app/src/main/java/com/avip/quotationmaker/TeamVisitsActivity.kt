@@ -45,6 +45,7 @@ class TeamVisitsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Lang.load(this)
         val root = vertical { setBackgroundColor(Ui.BG) }
         root.addView(topBar("Team Visits", "All sales executives", right = listOf(barButton(R.drawable.ic_refresh) { load() })))
         head = vertical { setPadding(dp(16), dp(12), dp(16), dp(4)) }

@@ -22,6 +22,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Lang.load(this)
         val root = vertical { setBackgroundColor(Ui.BG) }
         content = vertical(16)
         root.addView(ScrollView(this).apply { addView(content) }, lp(MATCH, 0, 1f))
@@ -62,10 +63,10 @@ class MainActivity : AppCompatActivity() {
             val latest = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Updater.fetchLatest() } ?: return@launch
             if (latest.versionCode <= Updater.currentVersionCode(this@MainActivity) || isFinishing) return@launch
             androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
-                .setTitle("Update required")
-                .setMessage("Version ${latest.versionName} of AVIP Solar Sales is available and must be installed to continue. It takes a few seconds.")
+                .setTitle(L("Update required"))
+                .setMessage(L("Version ${latest.versionName} of AVIP Solar Sales is available and must be installed to continue. It takes a few seconds."))
                 .setCancelable(false)
-                .setPositiveButton("Update now") { _, _ ->
+                .setPositiveButton(L("Update now")) { _, _ ->
                     startActivity(Intent(this@MainActivity, SplashActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK))
                     finish()
                 }
@@ -75,7 +76,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (VisitStore.applyReset(this)) Toast.makeText(this, "Visit records were reset by the office", Toast.LENGTH_LONG).show()
+        if (VisitStore.applyReset(this)) Toast.makeText(this, L("Visit records were reset by the office"), Toast.LENGTH_LONG).show()
         build()
         Remote.flushAsync(this)
     }
@@ -194,6 +195,7 @@ class MainActivity : AppCompatActivity() {
                 }, android.widget.FrameLayout.LayoutParams(dp(118), WRAP))
             }, lp(WRAP, WRAP))
             addView(text("Sales", 15f, Color.WHITE, bold = true) { maxLines = 1 }, lp(0, WRAP, 1f).margins(context, l = 10))
+            addView(langToggle(), lp(WRAP, WRAP).margins(context, r = 2))
             addView(barButton(R.drawable.ic_refresh) { refresh() })
             addView(barButton(R.drawable.ic_person) { startActivity(Intent(context, ProfileActivity::class.java)) })
         })
@@ -221,10 +223,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refresh() {
-        Toast.makeText(this, "Refreshing prices…", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, L("Refreshing prices…"), Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
             val ok = Catalog.refresh(this@MainActivity)
-            Toast.makeText(this@MainActivity, if (ok) "Prices updated" else "Couldn't refresh. Using saved prices.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@MainActivity, L(if (ok) "Prices updated" else "Couldn't refresh. Using saved prices."), Toast.LENGTH_SHORT).show()
             build()
         }
     }

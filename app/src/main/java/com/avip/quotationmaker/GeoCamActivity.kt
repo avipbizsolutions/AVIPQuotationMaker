@@ -129,11 +129,12 @@ class GeoCamActivity : AppCompatActivity() {
 
     private val perms = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (has(Manifest.permission.CAMERA)) startCamera() else { toast("Camera permission is needed for site photos"); finishWithResult() }
-        if (hasLocation()) startLocation() else info.text = "Location permission is off — photos will have no GPS stamp"
+        if (hasLocation()) startLocation() else info.text = L("Location permission is off — photos will have no GPS stamp")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Lang.load(this)
         dir = File(intent.getStringExtra(EXTRA_DIR) ?: run { finish(); return }).apply { mkdirs() }
         lines = intent.getStringArrayListExtra(EXTRA_LINES) ?: arrayListOf()
         hd = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("hd", true)
@@ -254,9 +255,9 @@ class GeoCamActivity : AppCompatActivity() {
         }
         paint(gridBtn, grid.visibility == View.VISIBLE)
         paint(flashBtn, flash)
-        hdBtn.text = if (hd) "HD" else "SD"
+        hdBtn.text = L(if (hd) "HD" else "SD")
         paint(hdBtn, hd)
-        doneBtn.text = if (saved.isEmpty()) "Done" else "Done (${saved.size})"
+        doneBtn.text = L(if (saved.isEmpty()) "Done" else "Done (${saved.size})")
     }
 
     private fun applyGrid(on: Boolean) {
@@ -527,5 +528,5 @@ class GeoCamActivity : AppCompatActivity() {
 
     private fun has(p: String) = ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
     private fun hasLocation() = has(Manifest.permission.ACCESS_FINE_LOCATION) || has(Manifest.permission.ACCESS_COARSE_LOCATION)
-    private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_SHORT).show()
+    private fun toast(m: String) = Toast.makeText(this, L(m), Toast.LENGTH_SHORT).show()
 }

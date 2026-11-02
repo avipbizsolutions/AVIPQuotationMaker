@@ -34,6 +34,7 @@ class ProfileActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Lang.load(this)
         window.statusBarColor = Ui.BRAND_DARK
         when {
             Officer.token(this).isNotBlank() && Officer.mustSetPin(this) -> showSetPin()
@@ -41,15 +42,15 @@ class ProfileActivity : AppCompatActivity() {
             else -> showLogin()
         }
         intent.getStringExtra(EXTRA_REVOKED)?.let { msg ->
-            AlertDialog.Builder(this).setTitle("Please log in again")
+            AlertDialog.Builder(this).setTitle(L("Please log in again"))
                 .setMessage(msg.ifBlank { "Your login has changed." } + "\n\nYour site visits are safe on this phone.")
-                .setPositiveButton("OK", null).show()
+                .setPositiveButton(L("OK"), null).show()
         }
     }
 
     private fun frame(title: String, subtitle: String, showBack: Boolean = false): LinearLayout {
         val root = vertical { setBackgroundColor(Ui.BG) }
-        root.addView(topBar(title, subtitle, showBack = showBack))
+        root.addView(topBar(title, subtitle, showBack = showBack, right = listOf(langToggle())))
         body = vertical(18)
         root.addView(ScrollView(this).apply { addView(body) }, lp(MATCH, 0, 1f))
         setContentView(root)
@@ -128,15 +129,15 @@ class ProfileActivity : AppCompatActivity() {
         b.addView(text("Your name and mobile print on every quotation. To change them, ask the office to update the Team Directory.", 13f, Ui.MUTED), lp().margins(this, t = 10))
         b.addView(pillButton("Log out", bg = Color.WHITE, fg = Ui.DANGER, iconRes = R.drawable.ic_logout) {
             AlertDialog.Builder(this)
-                .setTitle("Log out?")
-                .setMessage("Your site visits stay saved on this phone. You will need your mobile number and PIN to log in again.")
-                .setPositiveButton("Log out") { _, _ ->
+                .setTitle(L("Log out?"))
+                .setMessage(L("Your site visits stay saved on this phone. You will need your mobile number and PIN to log in again."))
+                .setPositiveButton(L("Log out")) { _, _ ->
                     Officer.signOut(this)
                     startActivity(Intent(this, ProfileActivity::class.java)
                         .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK))
                     finish()
                 }
-                .setNegativeButton("Cancel", null).show()
+                .setNegativeButton(L("Cancel"), null).show()
         }.apply { background = rounded(Color.WHITE, dpf(25f), Ui.DANGER, dp(1)) }, lp().margins(this, t = 20))
     }
 
@@ -154,8 +155,8 @@ class ProfileActivity : AppCompatActivity() {
             if (!isFinishing && !isDestroyed) try { dialog.dismiss() } catch (_: Exception) {}
             r.onSuccess(done).onFailure { e ->
                 if (e is RemoteException && e.sessionExpired) { Officer.signOut(this@ProfileActivity); showLogin() }
-                AlertDialog.Builder(this@ProfileActivity).setTitle("Could not log in")
-                    .setMessage(e.message ?: "Something went wrong.").setPositiveButton("OK", null).show()
+                AlertDialog.Builder(this@ProfileActivity).setTitle(L("Could not log in"))
+                    .setMessage(e.message ?: "Something went wrong.").setPositiveButton(L("OK"), null).show()
             }
         }
     }
@@ -170,5 +171,5 @@ class ProfileActivity : AppCompatActivity() {
         finish()
     }
 
-    private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_SHORT).show()
+    private fun toast(m: String) = Toast.makeText(this, L(m), Toast.LENGTH_SHORT).show()
 }

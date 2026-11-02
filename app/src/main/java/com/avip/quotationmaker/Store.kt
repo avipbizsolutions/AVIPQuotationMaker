@@ -147,7 +147,7 @@ object VisitStore {
         val i = Intent(Intent.ACTION_VIEW).setDataAndType(uri(a, file), "application/pdf")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         try { a.startActivity(i) } catch (_: ActivityNotFoundException) {
-            Toast.makeText(a, "No PDF viewer found. Use Share instead.", Toast.LENGTH_LONG).show()
+            Toast.makeText(a, L("No PDF viewer found. Use Share instead."), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -177,7 +177,7 @@ object VisitStore {
             if (digits.isNotEmpty()) i.putExtra("jid", "$digits@s.whatsapp.net")
             try {
                 a.startActivity(i)
-                if (pkg == "com.whatsapp") android.widget.Toast.makeText(a, "WhatsApp Business not found — opened personal WhatsApp", android.widget.Toast.LENGTH_LONG).show()
+                if (pkg == "com.whatsapp") android.widget.Toast.makeText(a, L("WhatsApp Business not found — opened personal WhatsApp"), android.widget.Toast.LENGTH_LONG).show()
                 return
             } catch (_: ActivityNotFoundException) {}
         }

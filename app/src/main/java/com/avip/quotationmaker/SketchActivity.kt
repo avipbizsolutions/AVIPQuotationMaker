@@ -24,6 +24,7 @@ class SketchActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Lang.load(this)
         file = File(intent.getStringExtra(EXTRA_FILE) ?: run { finish(); return })
         val root = horizontal { setBackgroundColor(Ui.BG); gravity = Gravity.TOP }
 

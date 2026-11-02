@@ -71,6 +71,7 @@ class SplashActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Lang.load(this)
         val root = vertical {
             gravity = Gravity.CENTER_HORIZONTAL
             background = gradient(0f, Ui.BRAND_DARK, Ui.BRAND)
@@ -122,7 +123,7 @@ class SplashActivity : AppCompatActivity() {
         val versionCode = Updater.currentVersionCode(this)
         val lastSeen = prefs.getLong("last_version_code", 0L)
         if (lastSeen in 1 until versionCode) {
-            Toast.makeText(this, "Updated to version ${Updater.currentVersionName(this)}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, L("Updated to version ${Updater.currentVersionName(this)}"), Toast.LENGTH_LONG).show()
         }
         prefs.edit().putLong("last_version_code", versionCode).apply()
 
@@ -131,7 +132,7 @@ class SplashActivity : AppCompatActivity() {
 
     private fun start() {
         retry.visibility = View.GONE
-        status.text = "Loading latest prices…"
+        status.text = L("Loading latest prices…")
         progress.visibility = View.VISIBLE
         progress.isIndeterminate = true
         val hadCache = Catalog.isLoaded || Catalog.loadCached(this)
@@ -156,7 +157,7 @@ class SplashActivity : AppCompatActivity() {
             minimum.await()
             if (!fresh && !hadCache) {
                 progress.visibility = View.GONE
-                status.text = "Couldn't load prices. Check your internet connection."
+                status.text = L("Couldn't load prices. Check your internet connection.")
                 retry.visibility = View.VISIBLE
                 return@launch
             }
@@ -170,14 +171,14 @@ class SplashActivity : AppCompatActivity() {
     }
 
     private suspend fun downloadAndInstall(release: ReleaseInfo) {
-        status.text = "Updating to version ${release.versionName}…"
+        status.text = L("Updating to version ${release.versionName}…")
         progress.isIndeterminate = false
         progress.progress = 0
         val apk = withContext(Dispatchers.IO) {
             Updater.download(this@SplashActivity, release) { pct -> runOnUiThread { progress.progress = pct } }
         }
         if (apk == null) { blockForUpdate("Download failed. Check the internet and try again."); return }
-        status.text = "Installing update…"
+        status.text = L("Installing update…")
         try {
             withContext(Dispatchers.IO) { Updater.install(this@SplashActivity, apk) }
         } catch (_: Exception) {
@@ -187,15 +188,15 @@ class SplashActivity : AppCompatActivity() {
 
     private fun askInstallPermission(release: ReleaseInfo) {
         AlertDialog.Builder(this)
-            .setTitle("New version available")
-            .setMessage("Version ${release.versionName} is required to continue. Allow AVIP Solar Sales to install its own updates? This is needed only once.")
+            .setTitle(L("New version available"))
+            .setMessage(L("Version ${release.versionName} is required to continue. Allow AVIP Solar Sales to install its own updates? This is needed only once."))
             .setCancelable(false)
-            .setPositiveButton("Allow") { _, _ ->
+            .setPositiveButton(L("Allow")) { _, _ ->
                 unknownSourcesLauncher.launch(
                     Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
                 )
             }
-            .setNegativeButton("Not now") { _, _ -> blockForUpdate("This update is required to keep using the app.") }
+            .setNegativeButton(L("Not now")) { _, _ -> blockForUpdate("This update is required to keep using the app.") }
             .show()
     }
 
@@ -204,7 +205,7 @@ class SplashActivity : AppCompatActivity() {
         val r = pendingRelease ?: run { goNext(); return }
         if (isFinishing) return
         progress.visibility = View.GONE
-        status.text = "Update required — version ${r.versionName}\n$reason"
+        status.text = L("Update required — version ${r.versionName}\n$reason")
         retry.visibility = View.GONE
         updateBox?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
         val box = vertical {
@@ -242,5 +243,5 @@ class SplashActivity : AppCompatActivity() {
         finish()
     }
 
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    private fun toast(msg: String) = Toast.makeText(this, L(msg), Toast.LENGTH_SHORT).show()
 }
