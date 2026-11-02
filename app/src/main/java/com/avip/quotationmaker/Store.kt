@@ -17,25 +17,48 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** The sales executive using this phone. */
+/**
+ * The sales executive using this phone. Logged in with mobile + PIN from the
+ * AVIP Team Directory (one login for AVIP Solar Sales, Installation and Expense).
+ */
 object Officer {
     private fun p(c: Context) = c.getSharedPreferences("officer", Context.MODE_PRIVATE)
     fun name(c: Context) = p(c).getString("name", "") ?: ""
     fun mobile(c: Context) = p(c).getString("mobile", "") ?: ""
     fun code(c: Context) = p(c).getString("code", "") ?: ""
-    fun isComplete(c: Context) = name(c).isNotBlank() && mobile(c).filter { it.isDigit() }.length >= 10
-    fun save(c: Context, name: String, mobile: String, code: String) {
-        p(c).edit().putString("name", name.trim()).putString("mobile", mobile.trim()).putString("code", code.trim()).apply()
-        Remote.queue(c, JSONObject().put("kind", "officer").put("name", name.trim()).put("mobile", mobile.trim())
-            .put("code", code.trim()).put("installId", installId(c)).put("appVersion", Updater.currentVersionName(c)))
+    fun role(c: Context) = p(c).getString("role", "") ?: ""
+    fun designation(c: Context) = p(c).getString("designation", "") ?: ""
+    fun token(c: Context) = p(c).getString("token", "") ?: ""
+    fun mustSetPin(c: Context) = p(c).getBoolean("mustSetPin", false)
+    fun isComplete(c: Context) = name(c).isNotBlank() && token(c).isNotBlank() && !mustSetPin(c)
+
+    /** Saves the login from the office (user = { id, name, mobile, role, designation }). */
+    fun save(c: Context, user: JSONObject, token: String, mustSetPin: Boolean) {
+        p(c).edit().putString("name", user.optString("name").trim()).putString("mobile", user.optString("mobile").trim())
+            .putString("code", user.optString("id").trim()).putString("role", user.optString("role").trim())
+            .putString("designation", user.optString("designation").trim())
+            .putString("token", token).putBoolean("mustSetPin", mustSetPin)
+            .putBoolean("team", user.optString("role") == "Manager").apply()
+        if (!mustSetPin) Remote.queue(c, JSONObject().put("kind", "officer").put("installId", installId(c))
+            .put("appVersion", Updater.currentVersionName(c)))
     }
 
-    /** Removes the saved sign-in (number taken off the App Users list). */
-    fun signOut(c: Context) { p(c).edit().remove("name").remove("mobile").remove("code").remove("team").apply() }
+    /** Name / role changed in the directory: keep the login, refresh the details. */
+    fun refresh(c: Context, user: JSONObject) {
+        p(c).edit().putString("name", user.optString("name").trim()).putString("mobile", user.optString("mobile").trim())
+            .putString("code", user.optString("id").trim()).putString("role", user.optString("role").trim())
+            .putString("designation", user.optString("designation").trim())
+            .putBoolean("team", user.optString("role") == "Manager").apply()
+    }
 
-    /** May see every executive's visits (App Users → "Sees all team visits"). */
+    /** Logs out (visits stay on the phone; unsent uploads wait for the next login). */
+    fun signOut(c: Context) {
+        p(c).edit().remove("name").remove("mobile").remove("code").remove("team").remove("role")
+            .remove("designation").remove("token").remove("mustSetPin").apply()
+    }
+
+    /** May see every executive's visits: Sales App Role "Manager" in the Team Directory. */
     fun teamView(c: Context) = p(c).getBoolean("team", false)
-    fun setTeamView(c: Context, on: Boolean) { p(c).edit().putBoolean("team", on).apply() }
 
     fun installId(c: Context): String {
         val prefs = p(c)
@@ -46,6 +69,9 @@ object Officer {
         return id
     }
 }
+
+/** A readable error from the office web app. */
+class RemoteException(message: String, val sessionExpired: Boolean = false, val network: Boolean = false) : Exception(message)
 
 /** Site visits (JSON + photos + PDFs), one folder per visit in private storage. */
 object VisitStore {
@@ -259,7 +285,9 @@ object Remote {
                         val arr = JSONArray(p.getString("pending", "[]") ?: "[]")
                         if (arr.length() == 0) null else arr.getJSONObject(0)
                     } ?: break
-                    val item = JSONObject(first.toString()).put("key", SHARED_KEY)
+                    val token = Officer.token(c)
+                    if (token.isBlank() || Officer.mustSetPin(c)) break // wait for login
+                    val item = JSONObject(first.toString()).put("key", SHARED_KEY).put("token", token)
                     val path = item.optString("path")
                     val sent = if (item.optString("kind") == "file") {
                         val f = File(path)
@@ -298,28 +326,45 @@ object Remote {
     }
 
     /** Every executive's visits from the office sheet. Throws with a readable message on failure. */
-    fun teamVisits(c: Context): JSONArray {
+    fun teamVisits(c: Context): JSONArray = call(c, "team").optJSONArray("visits") ?: JSONArray()
+
+    /**
+     * One request to the office web app (login, PIN, team view…). Blocking: run it off the
+     * main thread. Throws [RemoteException]; sessionExpired = log in again.
+     */
+    fun call(c: Context, kind: String, body: JSONObject = JSONObject()): JSONObject {
         val endpoint = Catalog.settings["visit_log_url"]
-        if (!endpoint.startsWith("https://")) error("Office log is not set up")
-        val body = JSONObject().put("key", SHARED_KEY).put("kind", "team")
-            .put("mobile", Officer.mobile(c)).put("installId", Officer.installId(c)).toString()
-        val conn = URL(endpoint).openConnection() as HttpURLConnection
-        try {
-            conn.requestMethod = "POST"
-            conn.doOutput = true
-            conn.connectTimeout = 15000
-            conn.readTimeout = 60000
-            conn.instanceFollowRedirects = true
-            conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
-            conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-            val text = conn.inputStream.bufferedReader().use { it.readText() }
-            val o = try { JSONObject(text) } catch (_: Exception) { error("The office log needs updating (new Apps Script version)") }
-            if (!o.optBoolean("ok")) error(o.optString("error").ifBlank { "Could not load team visits" }.let {
-                if (it == "unknown kind") "The office log needs updating (new Apps Script version)" else it })
-            return o.optJSONArray("visits") ?: JSONArray()
-        } finally {
-            conn.disconnect()
+        if (!endpoint.startsWith("https://")) throw RemoteException("Office server is not set up yet, or prices did not load. Check the internet and reopen the app.")
+        body.put("key", SHARED_KEY).put("kind", kind)
+        if (!body.has("token")) body.put("token", Officer.token(c))
+        val text = try {
+            val conn = URL(endpoint).openConnection() as HttpURLConnection
+            try {
+                conn.requestMethod = "POST"
+                conn.doOutput = true
+                conn.connectTimeout = 15000
+                conn.readTimeout = 60000
+                conn.instanceFollowRedirects = true
+                conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+                conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                val code = conn.responseCode
+                (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+            } finally {
+                conn.disconnect()
+            }
+        } catch (_: Exception) {
+            throw RemoteException("No internet connection. Please try again.", network = true)
         }
+        val o = try { JSONObject(text) } catch (_: Exception) {
+            throw RemoteException("The office server did not answer properly. Try again in a minute.", network = true)
+        }
+        if (!o.optBoolean("ok")) {
+            val msg = o.optString("error").removePrefix("Error: ").ifBlank { "Something went wrong." }
+            if (msg.startsWith("SESSION:")) throw RemoteException(msg.removePrefix("SESSION:").trim(), sessionExpired = true)
+            if (msg == "unknown kind") throw RemoteException("The office log needs updating (new Apps Script version).")
+            throw RemoteException(msg)
+        }
+        return o
     }
 
     private fun post(endpoint: String, body: String): Boolean {

@@ -21,12 +21,18 @@
  *    Phones pick it up on their next launch — no app update needed.
  * When you change this code later: Deploy > Manage deployments > Edit > Version: New version.
  *
- * Team view: anyone marked "Yes" under "Sees all team visits" in the price sheet's
- * "App Users" tab can see every executive's visits in the app (Team Visits screen).
+ * Login (common to all AVIP Solar apps): mobile + PIN from the AVIP Team Directory,
+ * checked by AVIP Auth. AuthClient.gs must be pasted as a second file in this project,
+ * and AUTH_URL and AUTH_KEY added in Project Settings → Script properties.
+ * Everyone with a "Sales App Role" in the directory can use the app; role "Manager"
+ * also sees every executive's visits (Team Visits screen). Every upload carries the
+ * phone's login, so the executive's name and mobile always come from the directory.
+ *
+ * Converted visits with an installation date are also sent to AVIP Solar Installation
+ * (INSTALL_CHECK_URL and INSTALL_CHECK_KEY in Script properties; see pushToInstallCheck).
  */
 const SHARED_KEY = 'avip-quote-7Qm4'; // must match Remote.kt
 const FOLDER_NAME = 'AVIP Site Visits';
-const PRICE_SHEET_ID = '1g4CSk_r3YaaBZ9RO4vGIO8n14GrVrKaejB35HNPCjXc'; // "AVIP Customer Prices (App)"
 // never sent to phones, even for the team view
 const PRIVATE_COLUMNS = ['PAN', 'Aadhaar (last 4)'];
 
@@ -51,6 +57,15 @@ function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
     if (d.key !== SHARED_KEY) return reply({ ok: false, error: 'unauthorised' });
+    // common AVIP login (AVIP Team Directory → AVIP Auth)
+    if (d.kind === 'login') return reply(Object.assign({ ok: true }, authLogin_('sales', d)));
+    if (d.kind === 'setPin') return reply(Object.assign({ ok: true }, authSetPin_('sales', d)));
+    const u = authUser_('sales', d, d.kind === 'me');
+    if (d.kind === 'me') return reply({ ok: true, user: u });
+    // the executive is the logged-in person, whatever the phone sent
+    d.officer = u.name;
+    d.officerMobile = u.mobile;
+    d.user = u;
     if (d.kind === 'team') return reply(teamVisits(SpreadsheetApp.getActiveSpreadsheet(), d)); // read only: no lock
     lock.waitLock(20000);
     const book = SpreadsheetApp.getActiveSpreadsheet();
@@ -62,7 +77,7 @@ function doPost(e) {
     else return reply({ ok: false, error: 'unknown kind' });
     return reply({ ok: true });
   } catch (err) {
-    return reply({ ok: false, error: String(err) });
+    return reply({ ok: false, error: String((err && err.message) || err) });
   } finally {
     try { lock.releaseLock(); } catch (_) {}
   }
@@ -100,6 +115,42 @@ function saveVisit(book, d) {
   ];
   if (row > 0) sheet.getRange(row, 1, 1, values.length).setValues([values]);
   else sheet.appendRow(values);
+
+  // Converted with an installation date → a Draft site in AVIP Solar Install Check
+  if (clean(d.leadStatus) === 'Converted') {
+    const m = clean(d.notes, 500).match(/Installation wanted: (\d{4}-\d{2}-\d{2})/);
+    if (m) pushToInstallCheck(d, m[1], keep ? keep[COL['Site Report PDF'] - 1] : '');
+  }
+}
+
+/**
+ * Sends a converted visit to AVIP Solar Install Check. Needs two Script Properties
+ * (Apps Script → Project Settings → Script Properties):
+ *   INSTALL_CHECK_URL = the Install Check web app /exec URL
+ *   INSTALL_CHECK_KEY = the link key printed by Install Check's "setup"
+ * Without them nothing is sent. A failure never stops the visit from being logged.
+ */
+function pushToInstallCheck(d, installDate, reportPdf) {
+  const p = PropertiesService.getScriptProperties();
+  const url = p.getProperty('INSTALL_CHECK_URL');
+  const key = p.getProperty('INSTALL_CHECK_KEY');
+  if (!url || !key) return;
+  try {
+    UrlFetchApp.fetch(url, {
+      method: 'post', contentType: 'text/plain', muteHttpExceptions: true, followRedirects: true,
+      payload: JSON.stringify({
+        key: 'avip-install-9Kp2', kind: 'salesVisit', linkKey: key,
+        visitNo: clean(d.number), salesPerson: clean(d.officer), salesMobile: clean(d.officerMobile),
+        customer: clean(d.customer),
+        mobile: clean(d.mobile), address: clean(d.address, 300), district: clean(d.district),
+        location: clean(d.location), kwp: num(d.kwp), systemType: clean(d.systemType),
+        system: clean(d.system), discom: clean(d.discom), caNo: clean(d.caNo),
+        visitDate: clean(d.visitDate), installDate: installDate, reportPdf: clean(reportPdf),
+      }),
+    });
+  } catch (err) {
+    console.log('Install Check push failed: ' + err);
+  }
 }
 
 function saveFollowUp(book, d) {
@@ -111,7 +162,7 @@ function saveFollowUp(book, d) {
 
 function saveOfficer(book, d) {
   const sheet = tab(book, 'Sales Team', TEAM_HEADERS);
-  const row = [new Date(), clean(d.name), clean(d.mobile), clean(d.code), clean(d.installId), clean(d.appVersion)];
+  const row = [new Date(), clean(d.user.name), clean(d.user.mobile), clean(d.user.id), clean(d.installId), clean(d.appVersion)];
   const last = sheet.getLastRow();
   const ids = last > 1 ? sheet.getRange(2, 5, last - 1, 1).getValues().map(r => String(r[0])) : [];
   const i = ids.indexOf(String(row[4]));
@@ -121,19 +172,9 @@ function saveOfficer(book, d) {
 
 // ---------------------------------------------------------------- team view
 
-/** All visits of the whole team, for numbers allowed in the App Users tab. */
+/** All visits of the whole team, for Sales App Role "Manager" in the Team Directory. */
 function teamVisits(book, d) {
-  const mob = last10(d.mobile);
-  if (mob.length !== 10) return { ok: false, error: 'no mobile' };
-  // the request must come from a phone registered with that number
-  const team = tab(book, 'Sales Team', TEAM_HEADERS);
-  const reg = team.getLastRow() > 1 ? team.getRange(2, 1, team.getLastRow() - 1, TEAM_HEADERS.length).getValues() : [];
-  if (!reg.some(r => last10(r[2]) === mob && String(r[4]) === String(d.installId))) {
-    return { ok: false, error: 'This phone is not registered yet. Open the app with internet and try again in a minute.' };
-  }
-  const users = SpreadsheetApp.openById(PRICE_SHEET_ID).getSheetByName('App Users').getDataRange().getDisplayValues();
-  const me = users.slice(1).find(r => last10(r[0]) === mob && !/^\s*n/i.test(r[2] || '') && /^\s*y/i.test(r[4] || ''));
-  if (!me) return { ok: false, error: 'Your number does not have team view. Ask the Sales Head.' };
+  if (d.user.role !== 'Manager') return { ok: false, error: 'Team view is only for Sales App Role "Manager". Ask the office.' };
 
   const sv = tab(book, 'Site Visits', VISIT_HEADERS);
   const last = sv.getLastRow();
@@ -169,6 +210,22 @@ function saveFile(book, d) {
     sheet.getRange(row, col).setValue(sub.getUrl()); // folder holds all notes
   } else {
     sheet.getRange(row, col).setValue(file.getUrl());
+  }
+  // a converted visit's report reaches Install Check too
+  if (col === COL['Site Report PDF']) {
+    const r = sheet.getRange(row, 1, 1, VISIT_HEADERS.length).getValues()[0];
+    const m = String(r[COL['Site Notes'] - 1]).match(/Installation wanted: (\d{4}-\d{2}-\d{2})/);
+    if (String(r[COL['Lead Status'] - 1]) === 'Converted' && m) {
+      pushToInstallCheck({
+        number: r[COL['Visit No'] - 1], officer: r[COL['Sales Executive'] - 1], officerMobile: r[COL['Exec Mobile'] - 1],
+        customer: r[COL['Customer'] - 1],
+        mobile: r[COL['WhatsApp'] - 1], address: r[COL['Address'] - 1], district: r[COL['District'] - 1],
+        location: String(r[COL['Map'] - 1]).replace('https://maps.google.com/?q=', ''), kwp: r[COL['kWp'] - 1],
+        systemType: r[COL['System Type'] - 1], system: r[COL['System'] - 1], discom: r[COL['DISCOM'] - 1],
+        caNo: r[COL['CA No'] - 1], visitDate: r[COL['Visit Date'] - 1] instanceof Date
+          ? Utilities.formatDate(r[COL['Visit Date'] - 1], 'Asia/Kolkata', 'yyyy-MM-dd') : String(r[COL['Visit Date'] - 1]),
+      }, m[1], file.getUrl());
+    }
   }
 }
 

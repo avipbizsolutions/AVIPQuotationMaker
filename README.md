@@ -56,6 +56,15 @@ stay **private**, because it holds cost and margin. Phones pick up price changes
 `q_terms_1` … `q_terms_12` (quotation terms), `announcement` (home-screen notice),
 `visit_log_url` (see below).
 
+## Login (common AVIP login)
+Sales executives log in with their mobile number and 4-digit PIN from the private Google Sheet
+**AVIP Team Directory (Confidential)**: the same login as AVIP Solar Installation and Expense.
+Everyone with a **Sales App Role** there can use the app; role **Manager** also sees the Team Visits
+screen. Name and mobile on quotations come from the directory. The old **App Users** tab of the price
+sheet is no longer used for login. The office script (`apps-script/Code.gs`, in the sheet
+**Sales CRM Dashboard**) needs `apps-script/AuthClient.gs` as a second file and **AUTH_URL** /
+**AUTH_KEY** in its Script properties.
+
 ## Sales Head: team log, follow-ups and dashboard (one-time setup)
 Every **submitted** visit (quotation created) from every phone lands in one private Google Sheet,
 with the Quotation PDF, Site Visit Report and voice notes saved in Google Drive and linked.

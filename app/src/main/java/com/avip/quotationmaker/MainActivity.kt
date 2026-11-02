@@ -30,20 +30,28 @@ class MainActivity : AppCompatActivity() {
         checkAccess()
     }
 
-    /** Someone taken off the App Users list is signed out the next time the app opens online. */
+    /**
+     * Checks the login with the office each time the app opens online: someone disabled or
+     * removed in the Team Directory is logged out; a role change (team view) applies at once.
+     */
     private fun checkAccess() {
         lifecycleScope.launch {
-            val allowed = Catalog.allowedMobiles() ?: return@launch // offline: keep working
-            if (allowed.isEmpty() || isFinishing) return@launch
-            val key = Catalog.mobileKey(Officer.mobile(this@MainActivity))
-            if (key in allowed) {
-                val team = allowed[key] == true
-                if (team != Officer.teamView(this@MainActivity)) { Officer.setTeamView(this@MainActivity, team); build() }
-                return@launch
+            val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { Remote.call(this@MainActivity, "me") }
             }
+            if (isFinishing) return@launch
+            r.onSuccess { o ->
+                val user = o.optJSONObject("user") ?: return@onSuccess
+                val before = Officer.teamView(this@MainActivity)
+                Officer.refresh(this@MainActivity, user)
+                if (before != Officer.teamView(this@MainActivity)) build()
+                Remote.flushAsync(this@MainActivity)
+            }
+            val e = r.exceptionOrNull() as? RemoteException ?: return@launch // offline: keep working
+            if (!e.sessionExpired) return@launch
             Officer.signOut(this@MainActivity)
             startActivity(Intent(this@MainActivity, ProfileActivity::class.java)
-                .putExtra(ProfileActivity.EXTRA_REVOKED, true)
+                .putExtra(ProfileActivity.EXTRA_REVOKED, e.message)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK))
             finish()
         }
