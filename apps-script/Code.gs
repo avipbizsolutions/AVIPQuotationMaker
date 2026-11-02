@@ -83,6 +83,20 @@ function doPost(e) {
   }
 }
 
+/**
+ * Run from the editor after adding AuthClient.gs and AUTH_URL / AUTH_KEY: allows the
+ * script to reach the login service and shows how many people can use the app.
+ * Safe to run any time (changes nothing in the sheet).
+ */
+function checkLogin() {
+  const p = PropertiesService.getScriptProperties();
+  if (!p.getProperty('AUTH_URL') || !p.getProperty('AUTH_KEY')) {
+    Logger.log('Add AUTH_URL and AUTH_KEY in Project Settings → Script properties first.');
+    return;
+  }
+  Logger.log('Common login OK: ' + authUsers_('sales').length + ' people can use AVIP Solar Sales.');
+}
+
 /** Run once from the editor: creates tabs, Dashboard and the Drive folder. */
 function setup() {
   const book = SpreadsheetApp.getActiveSpreadsheet();
