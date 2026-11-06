@@ -27,6 +27,8 @@ object Officer {
     fun mobile(c: Context) = p(c).getString("mobile", "") ?: ""
     fun code(c: Context) = p(c).getString("code", "") ?: ""
     fun role(c: Context) = p(c).getString("role", "") ?: ""
+    /** A founder (Atul / Rahul): Admin in the directory's Expense column. Only they see the route report. */
+    fun founder(c: Context) = p(c).getBoolean("founder", false)""
     fun designation(c: Context) = p(c).getString("designation", "") ?: ""
     fun token(c: Context) = p(c).getString("token", "") ?: ""
     fun mustSetPin(c: Context) = p(c).getBoolean("mustSetPin", false)
@@ -38,7 +40,8 @@ object Officer {
             .putString("code", user.optString("id").trim()).putString("role", user.optString("role").trim())
             .putString("designation", user.optString("designation").trim())
             .putString("token", token).putBoolean("mustSetPin", mustSetPin)
-            .putBoolean("team", user.optString("role") == "Manager").apply()
+            .putBoolean("team", user.optString("role") == "Manager")
+            .putBoolean("founder", user.optJSONObject("roles")?.optString("expense") == "Admin").apply()
         if (!mustSetPin) Remote.queue(c, JSONObject().put("kind", "officer").put("installId", installId(c))
             .put("appVersion", Updater.currentVersionName(c)))
     }
@@ -48,13 +51,14 @@ object Officer {
         p(c).edit().putString("name", user.optString("name").trim()).putString("mobile", user.optString("mobile").trim())
             .putString("code", user.optString("id").trim()).putString("role", user.optString("role").trim())
             .putString("designation", user.optString("designation").trim())
-            .putBoolean("team", user.optString("role") == "Manager").apply()
+            .putBoolean("team", user.optString("role") == "Manager")
+            .putBoolean("founder", user.optJSONObject("roles")?.optString("expense") == "Admin").apply()
     }
 
     /** Logs out (visits stay on the phone; unsent uploads wait for the next login). */
     fun signOut(c: Context) {
         p(c).edit().remove("name").remove("mobile").remove("code").remove("team").remove("role")
-            .remove("designation").remove("token").remove("mustSetPin").apply()
+            .remove("designation").remove("token").remove("mustSetPin").remove("founder").apply()
     }
 
     /** May see every executive's visits: Sales App Role "Manager" in the Team Directory. */

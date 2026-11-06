@@ -62,6 +62,74 @@ object MapTiles {
         return out
     }
 
+    /**
+     * A day route drawn over OSM tiles: fits all points, draws the path and the start/end markers.
+     * Returns null when offline (no tiles).
+     */
+    fun renderRoute(points: List<DoubleArray>, widthPx: Int, heightPx: Int): Bitmap? {
+        if (points.isEmpty()) return null
+        var minLat = 90.0; var maxLat = -90.0; var minLng = 180.0; var maxLng = -180.0
+        points.forEach { p ->
+            minLat = minOf(minLat, p[0]); maxLat = maxOf(maxLat, p[0])
+            minLng = minOf(minLng, p[1]); maxLng = maxOf(maxLng, p[1])
+        }
+        val pad = 0.15
+        val dLat = (maxLat - minLat).coerceAtLeast(0.002); val dLng = (maxLng - minLng).coerceAtLeast(0.002)
+        minLat -= dLat * pad; maxLat += dLat * pad; minLng -= dLng * pad; maxLng += dLng * pad
+        var zoom = 18
+        while (zoom > 2) {
+            val n = 1 shl zoom
+            val spanX = (worldX(maxLng, n) - worldX(minLng, n))
+            val spanY = (worldY(minLat, n) - worldY(maxLat, n))
+            if (spanX <= widthPx && spanY <= heightPx) break
+            zoom--
+        }
+        val n = 1 shl zoom
+        val cx = worldX((minLng + maxLng) / 2, n)
+        val cy = (worldY(minLat, n) + worldY(maxLat, n)) / 2
+        val left = cx - widthPx / 2.0
+        val top = cy - heightPx / 2.0
+        val out = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawColor(Color.rgb(233, 235, 237))
+        val tx0 = floor(left / TILE).toInt(); val tx1 = floor((left + widthPx - 1) / TILE).toInt()
+        val ty0 = floor(top / TILE).toInt(); val ty1 = floor((top + heightPx - 1) / TILE).toInt()
+        var anyTile = false
+        for (ty in ty0..ty1) {
+            if (ty !in 0 until n) continue
+            for (tx in tx0..tx1) {
+                val wx = ((tx % n) + n) % n
+                val tile = fetch(zoom, wx, ty) ?: continue
+                anyTile = true
+                canvas.drawBitmap(tile, (tx * TILE - left).toFloat(), (ty * TILE - top).toFloat(), null)
+            }
+        }
+        if (!anyTile) { out.recycle(); return null }
+        val path = android.graphics.Path()
+        points.forEachIndexed { i, p ->
+            val x = (worldX(p[1], n) - left).toFloat(); val y = (worldY(p[0], n) - top).toFloat()
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        val halo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 9f; color = Color.argb(140, 255, 255, 255); strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+        val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 5f; color = Color.rgb(14, 107, 58); strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+        canvas.drawPath(path, halo); canvas.drawPath(path, line)
+        fun dot(p: DoubleArray, fill: Int) {
+            val x = (worldX(p[1], n) - left).toFloat(); val y = (worldY(p[0], n) - top).toFloat()
+            canvas.drawCircle(x, y, 9f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE })
+            canvas.drawCircle(x, y, 6f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = fill })
+        }
+        dot(points.first(), Color.rgb(21, 101, 192)) // start: blue
+        dot(points.last(), Color.rgb(179, 38, 30))   // end: red
+        drawAttribution(canvas, widthPx.toFloat())
+        return out
+    }
+
+    private fun worldX(lon: Double, n: Int) = (lon + 180.0) / 360.0 * n * TILE
+    private fun worldY(lat: Double, n: Int): Double {
+        val r = Math.toRadians(lat.coerceIn(-85.0511, 85.0511))
+        return (1.0 - ln(tan(r) + 1.0 / cos(r)) / PI) / 2.0 * n * TILE
+    }
+
     private fun fetch(z: Int, x: Int, y: Int): Bitmap? {
         val key = "$z/$x/$y"
         cache.get(key)?.let { return it }

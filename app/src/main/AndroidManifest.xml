@@ -10,6 +10,9 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
@@ -93,13 +96,18 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
-        </receiver>
+                </receiver>
+        <service
+            android:name=".RouteService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
         <activity android:name=".LeadsActivity" android:exported="false" />
         <activity android:name=".LeadFormActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".LeadActivity" android:exported="false" />
         <activity android:name=".BookVisitActivity" android:exported="false" />
         <activity android:name=".ScheduleActivity" android:exported="false" />
         <activity android:name=".TeamLeadsActivity" android:exported="false" />
+        <activity android:name=".RouteReportActivity" android:exported="false" />
 
 
         <receiver

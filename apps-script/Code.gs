@@ -58,6 +58,12 @@ const LEAD_HEADERS = ['Lead ID', 'Created', 'Customer', 'Mobile', 'Area', 'Month
   'Visit At', 'Visit Address', 'Visit Location', 'Visit No', 'Updated', 'Created By', 'History'];
 const STAGES = ['New', 'Called', 'Visit booked', 'Quoted', 'Negotiation', 'Booked', 'Lost'];
 
+// Field route log (founders only in the report). Staff are told in writing that the app
+// records location on working days; the report is visible only to the founders (Expense Admin).
+const ROUTE_HEADERS = ['Date', 'Executive', 'Exec Mobile', 'First', 'Last', 'Points', 'Count', 'Updated'];
+const ROUTE_MAX = 2000; // points kept per person per day
+const TZ = 'Asia/Kolkata';
+
 function doPost(e) {
   const lock = LockService.getScriptLock();
   try {
@@ -75,6 +81,7 @@ function doPost(e) {
     if (d.kind === 'team') return reply(teamVisits(SpreadsheetApp.getActiveSpreadsheet(), d)); // read only: no lock
     if (d.kind === 'leads') return reply(leadsFor(SpreadsheetApp.getActiveSpreadsheet(), u));
     if (d.kind === 'leadCheck') return reply(leadCheck(SpreadsheetApp.getActiveSpreadsheet(), u, d));
+    if (d.kind === 'routeReport') return reply(routeReport(SpreadsheetApp.getActiveSpreadsheet(), u, d)); // founders only, read only
     lock.waitLock(20000);
     const book = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -83,6 +90,7 @@ function doPost(e) {
     else if (d.kind === 'file') saveFile(book, d);
     else if (d.kind === 'officer') saveOfficer(book, d);
     else if (d.kind === 'leadSave') return reply(Object.assign({ ok: true }, saveLead(book, u, d.lead || {})));
+    else if (d.kind === 'routePing') return reply(Object.assign({ ok: true }, routePing(book, u, d)));
     else return reply({ ok: false, error: 'unknown kind' });
     return reply({ ok: true });
   } catch (err) {
@@ -113,6 +121,7 @@ function setup() {
   tab(book, 'Follow-ups', FOLLOW_HEADERS);
   tab(book, 'Sales Team', TEAM_HEADERS);
   tab(book, 'Leads', LEAD_HEADERS);
+  tab(book, 'Routes', ROUTE_HEADERS);
   dashboard(book, true);
   folder();
 }
@@ -486,4 +495,78 @@ function stageFromVisit(book, d) {
   if (next !== cur) t.sh.getRange(hit.row, c('Stage')).setValue(next);
   if (clean(d.number)) t.sh.getRange(hit.row, c('Visit No')).setValue(clean(d.number));
   t.sh.getRange(hit.row, c('Updated')).setValue(new Date());
+}
+
+
+// ---------------------------------------------------------------- field route log
+
+/** Only the founders (Admin in the AVIP Team Directory's Expense column) see the route report. */
+function isFounder(u) { return !!(u && u.roles && clean(u.roles.expense) === 'Admin'); }
+
+function routeSheet(book) { return tab(book, 'Routes', ROUTE_HEADERS); }
+function dayKey(ms) { return Utilities.formatDate(new Date(Number(ms) || Date.now()), TZ, 'yyyy-MM-dd'); }
+
+/**
+ * A phone sends a batch of recent location points for its logged-in user. Appended to that
+ * person's row for the day. Points are "latE5,lngE5,epochSec" joined by ";".
+ */
+function routePing(book, u, d) {
+  const pts = Array.isArray(d.points) ? d.points : [];
+  if (!pts.length) return { added: 0 };
+  const sh = routeSheet(book);
+  const key = dayKey(pts[0][2] ? pts[0][2] * 1000 : Date.now());
+  const mob = last10(u.mobile);
+  const n = sh.getLastRow() - 1;
+  let row = -1, existing = '';
+  if (n > 0) {
+    const vals = sh.getRange(2, 1, n, 3).getValues();
+    for (let i = 0; i < vals.length; i++) {
+      if (Utilities.formatDate(new Date(vals[i][0]), TZ, 'yyyy-MM-dd') === key && last10(vals[i][2]) === mob) { row = i + 2; break; }
+    }
+  }
+  const enc = pts.filter(function (p) { return p && p.length >= 3; })
+    .map(function (p) { return Math.round(p[0] * 1e5) + ',' + Math.round(p[1] * 1e5) + ',' + Math.round(p[2]); }).join(';');
+  if (row > 0) existing = clean(sh.getRange(row, COLR('Points'), 1, 1).getValue(), 48000);
+  let merged = existing ? existing + ';' + enc : enc;
+  let arr = merged.split(';');
+  if (arr.length > ROUTE_MAX) { arr = arr.slice(arr.length - ROUTE_MAX); merged = arr.join(';'); }
+  const first = arr[0] ? Number(arr[0].split(',')[2]) * 1000 : Date.now();
+  const last = arr[arr.length - 1] ? Number(arr[arr.length - 1].split(',')[2]) * 1000 : Date.now();
+  const values = [dayKey(first), clean(u.name), "'" + last10(u.mobile), new Date(first), new Date(last), merged, arr.length, new Date()];
+  if (row > 0) sh.getRange(row, 1, 1, values.length).setValues([values]);
+  else sh.appendRow(values);
+  return { added: pts.length, total: arr.length };
+}
+
+function COLR(h) { return ROUTE_HEADERS.indexOf(h) + 1; }
+
+/** Founders only: route points for a date. One executive (execMobile) or all. */
+function routeReport(book, u, d) {
+  if (!isFounder(u)) return { ok: false, error: 'Only the founders can open the route report.' };
+  const sh = routeSheet(book);
+  const n = sh.getLastRow() - 1;
+  const want = clean(d.date) || dayKey(Date.now());
+  const execWanted = last10(d.execMobile);
+  const out = [];
+  const execsSeen = {};
+  if (n > 0) {
+    const vals = sh.getRange(2, 1, n, ROUTE_HEADERS.length).getValues();
+    vals.forEach(function (v) {
+      const day = Utilities.formatDate(new Date(v[0]), TZ, 'yyyy-MM-dd');
+      const mob = last10(v[2]);
+      if (day !== want) return;
+      execsSeen[mob] = clean(v[1]);
+      if (execWanted && mob !== execWanted) return;
+      const points = clean(v[5], 48000).split(';').filter(Boolean).map(function (p) {
+        const a = p.split(','); return { lat: Number(a[0]) / 1e5, lng: Number(a[1]) / 1e5, t: Number(a[2]) * 1000 };
+      });
+      out.push({ exec: clean(v[1]), mobile: mob, first: new Date(v[3]).getTime(), last: new Date(v[4]).getTime(), count: Number(v[6]) || points.length, points: points });
+    });
+  }
+  // who has data on this day (for the executive picker), plus everyone active (may have none)
+  let people = [];
+  try { people = authUsers_('sales').map(function (p) { return { name: clean(p.name), mobile: last10(p.mobile) }; }); } catch (_) {}
+  const execs = people.map(function (p) { return { name: p.name, mobile: p.mobile, hasData: !!execsSeen[p.mobile] }; });
+  Object.keys(execsSeen).forEach(function (m) { if (!people.some(function (p) { return p.mobile === m; })) execs.push({ name: execsSeen[m], mobile: m, hasData: true }); });
+  return { ok: true, date: want, routes: out, execs: execs };
 }

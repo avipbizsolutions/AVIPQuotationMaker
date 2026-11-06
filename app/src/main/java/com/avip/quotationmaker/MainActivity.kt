@@ -2,6 +2,7 @@ package com.avip.quotationmaker
 
 import android.content.Intent
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.text.format.DateUtils
 import android.view.Gravity
@@ -10,7 +11,10 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -19,6 +23,11 @@ import java.util.Calendar
 class MainActivity : AppCompatActivity() {
 
     private lateinit var content: LinearLayout
+
+    private val locPerms = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        if (RouteLog.locationGranted(this)) { askBackgroundLocation(); RouteLog.ensure(this) }
+    }
+    private val bgPerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) { RouteLog.ensure(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,7 +90,45 @@ class MainActivity : AppCompatActivity() {
         build()
         Remote.flushAsync(this)
         refreshLeads()
+        setupRouteLogging()
     }
+
+    /**
+     * Field route logging. Staff are informed in writing; the app also asks for a one-time
+     * acknowledgement and shows a standing "on duty" notice while recording. Only founders
+     * can open the report.
+     */
+    private fun setupRouteLogging() {
+        if (!RouteLog.enabled(this)) { RouteLog.ensure(this); return }
+        if (!RouteLog.hasConsented(this)) {
+            AlertDialog.Builder(this)
+                .setTitle(L("Location recording"))
+                .setMessage(L("On working days (9 AM to 8 PM) this app records your location for route and attendance, as informed by the office in writing. A notice stays on while it records. Only the founders can see the report."))
+                .setCancelable(false)
+                .setPositiveButton(L("I understand")) { _, _ ->
+                    RouteLog.setConsented(this)
+                    if (!RouteLog.locationGranted(this)) locPerms.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
+                    else { askBackgroundLocation(); RouteLog.ensure(this) }
+                }
+                .show()
+            return
+        }
+        if (!RouteLog.locationGranted(this)) locPerms.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
+        else RouteLog.ensure(this)
+    }
+
+    /** All-day recording is reliable only with "Allow all the time"; ask once on Android 10+. */
+    private fun askBackgroundLocation() {
+        if (Build.VERSION.SDK_INT < 29) return
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_BACKGROUND_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        AlertDialog.Builder(this)
+            .setTitle(L("Allow location all the time"))
+            .setMessage(L("For the full-day route, set location to "Allow all the time" on the next screen. Without it, the route records only while the app is open."))
+            .setPositiveButton(L("Continue")) { _, _ -> bgPerm.launch(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION) }
+            .setNegativeButton(L("Later")) { _, _ -> }
+            .show()
+    }
+
 
     private fun build() {
         content.removeAllViews()
@@ -260,6 +307,19 @@ class MainActivity : AppCompatActivity() {
             }, lp().margins(context, t = 8))
             foreground = context.ripple()
             setOnClickListener { startActivity(Intent(context, LeadsActivity::class.java)) }
+        }, lp().margins(this, b = 10))
+        if (Officer.founder(this)) inner.addView(horizontal {
+            background = rounded(Color.WHITE, dpf(18f), Ui.LINE, dp(1))
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            foreground = context.ripple()
+            gravity = Gravity.CENTER_VERTICAL
+            addView(badge(R.drawable.ic_location, 0xFF6A1B9A.toInt(), 40, square = true))
+            addView(vertical {
+                addView(text("Day Route Report", 15f, Ui.TEXT, bold = true))
+                addView(text(tr("हर executive का दिन का route — सिर्फ founders", "Each executive's day route — founders only"), 12f, Ui.MUTED))
+            }, lp(0, WRAP, 1f).margins(context, l = 12))
+            addView(text("›", 26f, Ui.BRAND, bold = true))
+            setOnClickListener { startActivity(Intent(context, RouteReportActivity::class.java)) }
         }, lp().margins(this, b = 10))
         if (Officer.teamView(this)) inner.addView(horizontal {
             background = rounded(Color.WHITE, dpf(18f), Ui.LINE, dp(1))

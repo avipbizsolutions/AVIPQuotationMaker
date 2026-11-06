@@ -256,7 +256,8 @@ object LeadAlarms {
 class LeadReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
-            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> LeadAlarms.rescheduleAll(context)
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> { LeadAlarms.rescheduleAll(context); RouteLog.ensure(context) }
+            "com.avip.quotationmaker.ROUTE_TICK" -> RouteLog.ensure(context)
             else -> {
                 val l = LeadStore.get(context, intent.getStringExtra(LeadAlarms.EXTRA_ID) ?: return) ?: return
                 if (l.isOpen) LeadAlarms.notify(context, l, intent.getStringExtra(LeadAlarms.EXTRA_WHAT) ?: "call")
