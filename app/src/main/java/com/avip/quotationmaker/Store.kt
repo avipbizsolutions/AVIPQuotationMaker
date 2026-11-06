@@ -28,7 +28,7 @@ object Officer {
     fun code(c: Context) = p(c).getString("code", "") ?: ""
     fun role(c: Context) = p(c).getString("role", "") ?: ""
     /** A founder (Atul / Rahul): Admin in the directory's Expense column. Only they see the route report. */
-    fun founder(c: Context) = p(c).getBoolean("founder", false)""
+    fun founder(c: Context) = p(c).getBoolean("founder", false)
     fun designation(c: Context) = p(c).getString("designation", "") ?: ""
     fun token(c: Context) = p(c).getString("token", "") ?: ""
     fun mustSetPin(c: Context) = p(c).getBoolean("mustSetPin", false)

@@ -123,7 +123,7 @@ class MainActivity : AppCompatActivity() {
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_BACKGROUND_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) return
         AlertDialog.Builder(this)
             .setTitle(L("Allow location all the time"))
-            .setMessage(L("For the full-day route, set location to "Allow all the time" on the next screen. Without it, the route records only while the app is open."))
+            .setMessage(L("For the full-day route, set location to Allow all the time on the next screen. Without that, the route records only while the app is open."))
             .setPositiveButton(L("Continue")) { _, _ -> bgPerm.launch(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION) }
             .setNegativeButton(L("Later")) { _, _ -> }
             .show()
