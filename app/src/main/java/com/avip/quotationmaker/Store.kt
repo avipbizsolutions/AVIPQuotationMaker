@@ -118,6 +118,26 @@ object VisitStore {
         File(d, "visit.json").takeIf { it.exists() }?.let { runCatching { Visit.fromJson(JSONObject(it.readText())) }.getOrNull() }
     }.sortedByDescending { it.updatedAt }
 
+    /**
+     * Visits made by the person logged in now. Visits stay on the phone across logins, so the
+     * home screen and All Visits must show only the current user's own work, not a previous user's.
+     * Matched by mobile (reliable), falling back to the creator's name, and for very old visits
+     * that stored neither, by the code embedded in the visit number (AVQ-<code>-...).
+     */
+    fun mine(c: Context): List<Visit> {
+        val mob = Officer.mobile(c).filter { it.isDigit() }.takeLast(10)
+        val name = Officer.name(c)
+        val code = Officer.code(c).uppercase()
+        return all(c).filter { v ->
+            val vm = v.officerMobile.filter { it.isDigit() }.takeLast(10)
+            when {
+                vm.isNotEmpty() -> vm == mob
+                v.officerName.isNotBlank() -> v.officerName.equals(name, true)
+                else -> code.isNotBlank() && v.number.uppercase().startsWith("AVQ-$code-")
+            }
+        }
+    }
+
     fun delete(c: Context, v: Visit) {
         Reminders.cancel(c, v.number)
         dir(c, v.number).deleteRecursively()

@@ -37,7 +37,7 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun fill() {
         list.removeAllViews()
-        val items = VisitStore.all(this).filter { v ->
+        val items = VisitStore.mine(this).filter { v ->
             when (filter) {
                 "Follow-up due" -> v.followUpDue
                 "Draft" -> !v.isQuoted

@@ -162,8 +162,8 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { startActivity(Intent(context, VisitActivity::class.java)) }
         }, lp().margins(this, b = 14))
 
-        // Stats
-        val visits = VisitStore.all(this)
+        // Stats (only the logged-in user's own visits)
+        val visits = VisitStore.mine(this)
         val dayStart = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
         val monthStart = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0) }.timeInMillis
         // a visit counts once the site visit is submitted (quotation created)
