@@ -52,6 +52,12 @@ VISIT_HEADERS.forEach((h, i) => COL[h] = i + 1);
 const FOLLOW_HEADERS = ['Received', 'Call Time', 'Visit No', 'Sales Executive', 'Customer', 'WhatsApp', 'Result', 'Note', 'Next Follow-up', 'Lead Status'];
 const TEAM_HEADERS = ['Updated', 'Name', 'Mobile', 'Employee Code', 'Install ID', 'App Version'];
 
+// Leads: every enquiry before (and after) the site visit
+const LEAD_HEADERS = ['Lead ID', 'Created', 'Customer', 'Mobile', 'Area', 'Monthly Bill', 'Source', 'Referred By',
+  'Type', 'Finance', 'Notes', 'Stage', 'Lost Reason', 'Executive', 'Exec Mobile', 'Next Action', 'Next Action At',
+  'Visit At', 'Visit Address', 'Visit Location', 'Visit No', 'Updated', 'Created By', 'History'];
+const STAGES = ['New', 'Called', 'Visit booked', 'Quoted', 'Negotiation', 'Booked', 'Lost'];
+
 function doPost(e) {
   const lock = LockService.getScriptLock();
   try {
@@ -67,6 +73,8 @@ function doPost(e) {
     d.officerMobile = u.mobile;
     d.user = u;
     if (d.kind === 'team') return reply(teamVisits(SpreadsheetApp.getActiveSpreadsheet(), d)); // read only: no lock
+    if (d.kind === 'leads') return reply(leadsFor(SpreadsheetApp.getActiveSpreadsheet(), u));
+    if (d.kind === 'leadCheck') return reply(leadCheck(SpreadsheetApp.getActiveSpreadsheet(), u, d));
     lock.waitLock(20000);
     const book = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -74,6 +82,7 @@ function doPost(e) {
     else if (d.kind === 'followup') saveFollowUp(book, d);
     else if (d.kind === 'file') saveFile(book, d);
     else if (d.kind === 'officer') saveOfficer(book, d);
+    else if (d.kind === 'leadSave') return reply(Object.assign({ ok: true }, saveLead(book, u, d.lead || {})));
     else return reply({ ok: false, error: 'unknown kind' });
     return reply({ ok: true });
   } catch (err) {
@@ -103,6 +112,7 @@ function setup() {
   tab(book, 'Site Visits', VISIT_HEADERS);
   tab(book, 'Follow-ups', FOLLOW_HEADERS);
   tab(book, 'Sales Team', TEAM_HEADERS);
+  tab(book, 'Leads', LEAD_HEADERS);
   dashboard(book, true);
   folder();
 }
@@ -129,6 +139,11 @@ function saveVisit(book, d) {
   ];
   if (row > 0) sheet.getRange(row, 1, 1, values.length).setValues([values]);
   else sheet.appendRow(values);
+
+  // a visit started from a lead moves the lead on: Quoted / Booked (Converted) / Lost
+  if (clean(d.leadId)) {
+    try { stageFromVisit(book, d); } catch (err) { Logger.log('lead stage: ' + err); }
+  }
 
   // Converted with an installation date → a Draft site in AVIP Solar Install Check
   if (clean(d.leadStatus) === 'Converted') {
@@ -350,4 +365,125 @@ function clean(value, max) {
 function reply(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ---------------------------------------------------------------- leads
+
+function isManager(u) { return clean(u && u.role) === 'Manager'; }
+function sameMobile(a, b) { return last10(a) !== '' && last10(a) === last10(b); }
+
+function leadRows(book) {
+  const sh = tab(book, 'Leads', LEAD_HEADERS);
+  const n = sh.getLastRow() - 1;
+  if (n < 1) return { sh: sh, rows: [] };
+  const vals = sh.getRange(2, 1, n, LEAD_HEADERS.length).getValues();
+  return { sh: sh, rows: vals.map(function (r, i) { return { row: i + 2, v: r }; }).filter(function (x) { return clean(x.v[0]) !== ''; }) };
+}
+
+function cell(r, h) { return r[LEAD_HEADERS.indexOf(h)]; }
+function ms(v) { return v instanceof Date ? v.getTime() : (Number(v) || 0); }
+
+function leadOut(r) {
+  let hist = [];
+  try { hist = JSON.parse(clean(cell(r, 'History'), 45000) || '[]'); } catch (_) {}
+  const loc = clean(cell(r, 'Visit Location')).replace('https://maps.google.com/?q=', '').split(',');
+  return {
+    id: clean(cell(r, 'Lead ID')), createdAt: ms(cell(r, 'Created')), name: clean(cell(r, 'Customer')),
+    mobile: clean(cell(r, 'Mobile')), area: clean(cell(r, 'Area')), bill: clean(cell(r, 'Monthly Bill')),
+    source: clean(cell(r, 'Source')), referredBy: clean(cell(r, 'Referred By')), type: clean(cell(r, 'Type')),
+    finance: clean(cell(r, 'Finance')), notes: clean(cell(r, 'Notes'), 1000), stage: clean(cell(r, 'Stage')) || 'New',
+    lostReason: clean(cell(r, 'Lost Reason')), exec: clean(cell(r, 'Executive')), execMobile: clean(cell(r, 'Exec Mobile')),
+    nextNote: clean(cell(r, 'Next Action')), nextAt: ms(cell(r, 'Next Action At')), visitAt: ms(cell(r, 'Visit At')),
+    visitAddress: clean(cell(r, 'Visit Address'), 300), visitLat: Number(loc[0]) || 0, visitLng: Number(loc[1]) || 0,
+    visitNumber: clean(cell(r, 'Visit No')), updatedAt: ms(cell(r, 'Updated')), createdBy: clean(cell(r, 'Created By')),
+    history: hist,
+  };
+}
+
+function canSee(u, l) {
+  return isManager(u) || sameMobile(l.execMobile, u.mobile) || (!l.execMobile && clean(l.createdBy) === clean(u.name));
+}
+
+/** The person's leads (managers: everyone's, and the team list for assigning). */
+function leadsFor(book, u) {
+  const list = leadRows(book).rows.map(function (x) { return leadOut(x.v); }).filter(function (l) { return canSee(u, l); });
+  const out = { ok: true, leads: list.slice(-3000), manager: isManager(u) };
+  if (isManager(u)) {
+    try {
+      out.team = authUsers_('sales').filter(function (p) { return clean(p.name); })
+        .map(function (p) { return { name: clean(p.name), mobile: clean(p.mobile), role: clean(p.role) }; });
+    } catch (_) { out.team = []; }
+  }
+  return out;
+}
+
+/** Is this mobile number already a lead? (shows whose, so two executives do not chase the same customer) */
+function leadCheck(book, u, d) {
+  const m = last10(d.mobile);
+  if (m.length < 10) return { ok: true, found: null };
+  const hit = leadRows(book).rows.map(function (x) { return leadOut(x.v); })
+    .filter(function (l) { return last10(l.mobile) === m && l.id !== clean(d.id); })[0];
+  return { ok: true, found: hit ? { id: hit.id, name: hit.name, stage: hit.stage, exec: hit.exec || 'Unassigned', mine: canSee(u, hit) } : null };
+}
+
+/**
+ * Creates or updates one lead (sent from the phone's upload queue, so it may come twice).
+ * Executives change only their own leads and cannot hand a lead to someone else;
+ * managers can change and assign any lead. History entries are merged by id.
+ */
+function saveLead(book, u, l) {
+  const id = clean(l.id, 40);
+  if (!/^LD-[0-9A-Za-z-]+$/.test(id)) throw new Error('Lead id missing. Update the app.');
+  const t = leadRows(book);
+  const hit = t.rows.filter(function (x) { return clean(x.v[0]) === id; })[0];
+  const old = hit ? leadOut(hit.v) : null;
+  if (old && !canSee(u, old)) throw new Error('This lead belongs to ' + (old.exec || 'another executive') + '.');
+  let exec = clean(l.exec), execMobile = clean(l.execMobile);
+  if (!isManager(u)) {
+    if (old) { exec = old.exec || u.name; execMobile = old.execMobile || u.mobile; }
+    else { exec = u.name; execMobile = u.mobile; }
+  }
+  const stage = STAGES.indexOf(clean(l.stage)) >= 0 ? clean(l.stage) : (old ? old.stage : 'New');
+  // history: keep everything already there, add new entries
+  const seen = {};
+  const hist = [];
+  (old ? old.history : []).concat(Array.isArray(l.history) ? l.history : []).forEach(function (e) {
+    if (!e || !e.id || seen[e.id]) return;
+    seen[e.id] = true;
+    hist.push({ id: clean(e.id, 40), at: Number(e.at) || 0, by: clean(e.by, 60), kind: clean(e.kind, 20), text: clean(e.text, 300) });
+  });
+  hist.sort(function (a, b) { return a.at - b.at; });
+  let histText = JSON.stringify(hist);
+  while (histText.length > 45000 && hist.length > 1) { hist.shift(); histText = JSON.stringify(hist); }
+  const when = function (v) { const n = Number(v) || 0; return n > 0 ? new Date(n) : ''; };
+  const row = [
+    id, old ? new Date(old.createdAt || Date.now()) : when(l.createdAt) || new Date(), clean(l.name, 100), clean(l.mobile, 20),
+    clean(l.area, 120), clean(l.bill, 20), clean(l.source, 40), clean(l.referredBy, 100), clean(l.type, 40), clean(l.finance, 40),
+    clean(l.notes, 1000), stage, stage === 'Lost' ? clean(l.lostReason, 120) : '', exec, execMobile ? "'" + execMobile : '',
+    clean(l.nextNote, 200), when(l.nextAt), when(l.visitAt), clean(l.visitAddress, 300),
+    (Number(l.visitLat) && Number(l.visitLng)) ? 'https://maps.google.com/?q=' + Number(l.visitLat).toFixed(6) + ',' + Number(l.visitLng).toFixed(6) : '',
+    clean(l.visitNumber, 40) || (old ? old.visitNumber : ''), new Date(), old ? old.createdBy : u.name, histText,
+  ];
+  if (clean(l.name).length < 2) throw new Error('Customer name is missing.');
+  if (last10(l.mobile).length < 10) throw new Error('Mobile number is missing.');
+  if (hit) t.sh.getRange(hit.row, 1, 1, row.length).setValues([row]);
+  else t.sh.appendRow(row);
+  return { lead: leadOut(row) };
+}
+
+/** A site visit started from a lead: Quoted when the quotation exists, Booked when Converted, Lost when Lost. */
+function stageFromVisit(book, d) {
+  const t = leadRows(book);
+  const hit = t.rows.filter(function (x) { return clean(x.v[0]) === clean(d.leadId); })[0];
+  if (!hit) return;
+  const cur = clean(cell(hit.v, 'Stage')) || 'New';
+  const st = clean(d.leadStatus);
+  let next = cur;
+  if (st === 'Converted') next = 'Booked';
+  else if (st === 'Lost') next = 'Lost';
+  else if (clean(d.system) && STAGES.indexOf(cur) < STAGES.indexOf('Quoted')) next = 'Quoted';
+  const c = function (h) { return LEAD_HEADERS.indexOf(h) + 1; };
+  if (next !== cur) t.sh.getRange(hit.row, c('Stage')).setValue(next);
+  if (clean(d.number)) t.sh.getRange(hit.row, c('Visit No')).setValue(clean(d.number));
+  t.sh.getRange(hit.row, c('Updated')).setValue(new Date());
 }

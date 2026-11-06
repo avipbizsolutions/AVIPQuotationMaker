@@ -77,8 +77,10 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (VisitStore.applyReset(this)) Toast.makeText(this, L("Visit records were reset by the office"), Toast.LENGTH_LONG).show()
+        LeadStore.syncFromVisits(this)
         build()
         Remote.flushAsync(this)
+        refreshLeads()
     }
 
     private fun build() {
@@ -89,20 +91,29 @@ class MainActivity : AppCompatActivity() {
         val inner = vertical { setPadding(dp(16), 0, dp(16), 0) }
         content.addView(inner)
 
-        // Big call to action
+        // Main actions: a new lead, a visit to book, a site visit
         inner.addView(horizontal {
-            background = gradient(dpf(20f), Ui.SUN, 0xFFFFB84D.toInt())
-            elevation = dpf(6f)
-            setPadding(dp(18), dp(20), dp(18), dp(20))
+            addView(pillButton(tr("नई Lead", "New lead"), Ui.SUN, Ui.TEXT, heightDp = 54, iconRes = R.drawable.ic_plus) {
+                startActivity(Intent(context, LeadFormActivity::class.java))
+            }, lp(0, WRAP, 1f).margins(context, r = 8))
+            addView(pillButton(tr("Visit book", "Book visit"), Ui.BRAND, heightDp = 54, iconRes = R.drawable.ic_history) {
+                startActivity(Intent(context, LeadsActivity::class.java).putExtra(LeadsActivity.EXTRA_PICK, true))
+            }, lp(0, WRAP, 1f))
+        }, lp().margins(this, t = 16, b = 12))
+        leadsSection(inner)
+        inner.addView(horizontal {
+            background = gradient(dpf(18f), Ui.SUN, 0xFFFFB84D.toInt())
+            setPadding(dp(16), dp(14), dp(16), dp(14))
             foreground = context.ripple()
-            addView(badge(R.drawable.ic_sun, Ui.BRAND_DARK, 60))
+            gravity = Gravity.CENTER_VERTICAL
+            addView(badge(R.drawable.ic_sun, Ui.BRAND_DARK, 44))
             addView(vertical {
-                addView(text("New Site Visit", 22f, Ui.TEXT, bold = true))
-                addView(text("Survey  →  Pick system  →  Quotation PDF", 13f, 0xFF4A3A10.toInt()), lp().margins(context, t = 2))
-            }, lp(0, WRAP, 1f).margins(context, l = 14))
-            addView(text("›", 34f, Ui.TEXT, bold = true))
+                addView(text("New Site Visit", 17f, Ui.TEXT, bold = true))
+                addView(text("Survey  →  Pick system  →  Quotation PDF", 12f, 0xFF4A3A10.toInt()))
+            }, lp(0, WRAP, 1f).margins(context, l = 12))
+            addView(text("›", 30f, Ui.TEXT, bold = true))
             setOnClickListener { startActivity(Intent(context, VisitActivity::class.java)) }
-        }, lp().margins(this, t = 16, b = 14))
+        }, lp().margins(this, b = 14))
 
         // Stats
         val visits = VisitStore.all(this)
@@ -179,6 +190,100 @@ class MainActivity : AppCompatActivity() {
             })
         } else {
             visits.filter { it !in due }.take(4).forEach { inner.addView(visitRow(it) { build() }, lp().margins(this, b = 10)) }
+        }
+    }
+
+    /** Today's visits and calls, calls due, and the lead pipeline. */
+    private fun leadsSection(inner: LinearLayout) {
+        val mine = LeadStore.mine(this).filter { it.isOpen }
+        val today = Lead.startOfToday()
+        val todayItems = mine.flatMap { l ->
+            listOfNotNull(
+                if (l.stage == Lead.VISIT && l.visitAt in today..Lead.endOfToday()) Triple(l.visitAt, l, true) else null,
+                if (l.nextAt in today..Lead.endOfToday()) Triple(l.nextAt, l, false) else null,
+            )
+        }.sortedBy { it.first }
+        inner.addView(card(14) {
+            addView(horizontal {
+                addView(text(tr("आज · ${todayItems.count { it.third }} visit, ${todayItems.count { !it.third }} call", "Today · ${todayItems.count { it.third }} visits, ${todayItems.count { !it.third }} calls"), 16f, Ui.TEXT, bold = true), lp(0, WRAP, 1f))
+                addView(text("Schedule ›", 13.5f, Ui.BRAND, bold = true) { setPadding(dp(8), dp(4), 0, dp(4)) })
+            })
+            if (todayItems.isEmpty()) addView(text(tr("आज कोई visit या call तय नहीं।", "No visits or calls set for today."), 13f, Ui.MUTED), lp().margins(context, t = 4))
+            todayItems.take(4).forEach { (at, l, visit) ->
+                addView(horizontal {
+                    setPadding(0, dp(8), 0, dp(2))
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(text(java.text.SimpleDateFormat("hh:mm a", java.util.Locale.ENGLISH).format(java.util.Date(at)), 12.5f, if (visit) 0xFF7A4E00.toInt() else Ui.BLUE, bold = true), lp(dp(70), WRAP))
+                    addView(vertical {
+                        addView(text((if (visit) "Visit · " else "Call · ") + l.name, 14f, Ui.TEXT, bold = true) { maxLines = 1 })
+                        addView(text(if (visit) l.visitAddress.ifBlank { l.area } else l.area, 12f, Ui.MUTED) { maxLines = 1 })
+                    }, lp(0, WRAP, 1f))
+                    setOnClickListener { startActivity(Intent(context, LeadActivity::class.java).putExtra(LeadActivity.EXTRA_ID, l.id)) }
+                })
+            }
+            foreground = context.ripple()
+            setOnClickListener { startActivity(Intent(context, ScheduleActivity::class.java)) }
+        }, lp().margins(this, b = 10))
+        val due = mine.filter { it.callDue || it.stage == Lead.NEW }
+        if (due.isNotEmpty()) inner.addView(horizontal {
+            background = rounded(Color.WHITE, dpf(16f), 0xFFF2C4BF.toInt(), dp(1))
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            gravity = Gravity.CENTER_VERTICAL
+            foreground = context.ripple()
+            addView(badge(R.drawable.ic_call, Ui.DANGER, 40))
+            addView(vertical {
+                addView(text(tr("${due.size} call बाकी", "${due.size} calls to make"), 15f, Ui.DANGER, bold = true))
+                val over = due.count { it.callOverdue }; val fresh = due.count { it.stage == Lead.NEW }
+                addView(text(listOfNotNull(if (over > 0) tr("$over overdue", "$over overdue") else null, if (fresh > 0) tr("$fresh नई lead", "$fresh new leads") else null).joinToString(" · "), 12f, Ui.MUTED))
+            }, lp(0, WRAP, 1f).margins(context, l = 12))
+            addView(text("›", 26f, Ui.BRAND, bold = true))
+            setOnClickListener { startActivity(Intent(context, LeadsActivity::class.java)) }
+        }, lp().margins(this, b = 10))
+        val all = LeadStore.mine(this)
+        inner.addView(card(14) {
+            addView(horizontal {
+                addView(text(tr("मेरी Leads · ${mine.size}", "My leads · ${mine.size}"), 16f, Ui.TEXT, bold = true), lp(0, WRAP, 1f))
+                addView(text(tr("सब देखें ›", "See all ›"), 13.5f, Ui.BRAND, bold = true))
+            })
+            addView(horizontal {
+                listOf(Lead.NEW to "New", Lead.CALLED to "Called", Lead.VISIT to "Visit", Lead.QUOTED to "Quoted", Lead.BOOKED to "Booked").forEach { (st, lab) ->
+                    val (bg, fg) = Lead.stageColors(st)
+                    val n = if (st == Lead.QUOTED) all.count { it.stage == Lead.QUOTED || it.stage == Lead.NEGOTIATION } else all.count { it.stage == st }
+                    addView(vertical {
+                        gravity = Gravity.CENTER
+                        background = rounded(bg, dpf(12f))
+                        setPadding(0, dp(8), 0, dp(8))
+                        addView(text("$n", 19f, fg, bold = true))
+                        addView(text(lab, 10.5f, Ui.MUTED, bold = true))
+                    }, lp(0, WRAP, 1f).margins(context, r = 5))
+                }
+            }, lp().margins(context, t = 8))
+            foreground = context.ripple()
+            setOnClickListener { startActivity(Intent(context, LeadsActivity::class.java)) }
+        }, lp().margins(this, b = 10))
+        if (Officer.teamView(this)) inner.addView(horizontal {
+            background = rounded(Color.WHITE, dpf(18f), Ui.LINE, dp(1))
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            foreground = context.ripple()
+            gravity = Gravity.CENTER_VERTICAL
+            addView(badge(R.drawable.ic_person, Ui.BLUE, 40, square = true))
+            val un = LeadStore.all(this@MainActivity).count { it.execMobile.isBlank() && it.isOpen }
+            addView(vertical {
+                addView(text("Team Leads", 15f, Ui.TEXT, bold = true))
+                addView(text(if (un > 0) tr("$un lead assign करनी हैं", "$un leads to assign") else tr("Executive pipeline और assign", "Executive pipeline and assigning"), 12f, if (un > 0) Ui.DANGER else Ui.MUTED))
+            }, lp(0, WRAP, 1f).margins(context, l = 12))
+            addView(text("›", 26f, Ui.BRAND, bold = true))
+            setOnClickListener { startActivity(Intent(context, TeamLeadsActivity::class.java)) }
+        }, lp().margins(this, b = 14))
+    }
+
+    /** Leads from the office in the background; the home screen redraws when they arrive. */
+    private fun refreshLeads() {
+        lifecycleScope.launch {
+            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { LeadStore.refresh(this@MainActivity); LeadStore.syncFromVisits(this@MainActivity) }.isSuccess
+            }
+            if (ok && !isFinishing) build()
         }
     }
 

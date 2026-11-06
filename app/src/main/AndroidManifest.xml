@@ -86,6 +86,21 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+        <receiver
+            android:name=".LeadReminderReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <activity android:name=".LeadsActivity" android:exported="false" />
+        <activity android:name=".LeadFormActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".LeadActivity" android:exported="false" />
+        <activity android:name=".BookVisitActivity" android:exported="false" />
+        <activity android:name=".ScheduleActivity" android:exported="false" />
+        <activity android:name=".TeamLeadsActivity" android:exported="false" />
+
 
         <receiver
             android:name=".UpdatedReceiver"

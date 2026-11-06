@@ -207,6 +207,7 @@ class Visit(
 ) {
     var updatedAt: Long = createdAt
     var quotedAt: Long = 0L
+    var leadId = "" // the lead this visit was started from (moves the lead's stage)
 
     // customer
     var name = ""
@@ -284,7 +285,7 @@ class Visit(
     val finalPrice: Double get() = ((pkg?.price ?: 0.0) - discount).coerceAtLeast(0.0)
 
     fun toJson(): JSONObject = JSONObject().apply {
-        put("number", number); put("createdAt", createdAt); put("updatedAt", updatedAt); put("quotedAt", quotedAt)
+        put("number", number); put("createdAt", createdAt); put("updatedAt", updatedAt); put("quotedAt", quotedAt); put("leadId", leadId)
         put("name", name); put("mobile", mobile); put("address", address); put("district", district)
         put("pincode", pincode); put("pan", pan); put("aadhaar", aadhaar); put("email", email); put("caNo", caNo)
         put("discom", discom); put("phase", phase); put("sanctionedLoad", sanctionedLoad); put("monthlyBill", monthlyBill)
@@ -307,7 +308,7 @@ class Visit(
 
     companion object {
         fun fromJson(o: JSONObject): Visit = Visit(o.optString("number"), o.optLong("createdAt")).apply {
-            updatedAt = o.optLong("updatedAt", createdAt); quotedAt = o.optLong("quotedAt")
+            updatedAt = o.optLong("updatedAt", createdAt); quotedAt = o.optLong("quotedAt"); leadId = o.optString("leadId")
             name = o.optString("name"); mobile = o.optString("mobile"); address = o.optString("address")
             district = o.optString("district"); pincode = o.optString("pincode"); pan = o.optString("pan")
             aadhaar = o.optString("aadhaar"); email = o.optString("email"); caNo = o.optString("caNo"); discom = o.optString("discom")

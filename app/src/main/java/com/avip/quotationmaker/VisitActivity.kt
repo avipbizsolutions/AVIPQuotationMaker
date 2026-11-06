@@ -51,6 +51,8 @@ class VisitActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_NUMBER = "number"
+        /** Start a new visit from this lead: customer details filled in, and the lead moves on as the visit does. */
+        const val EXTRA_LEAD = "leadId"
         private val STEPS = listOf(
             "Customer" to R.drawable.ic_person,
             "Site" to R.drawable.ic_home,
@@ -131,7 +133,15 @@ class VisitActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         Lang.load(this)
         val number = intent.getStringExtra(EXTRA_NUMBER) ?: savedInstanceState?.getString(EXTRA_NUMBER)
-        v = number?.let { VisitStore.load(this, it) } ?: VisitStore.create(this).also { VisitStore.save(this, it) }
+        v = number?.let { VisitStore.load(this, it) } ?: VisitStore.create(this).also { nv ->
+            intent.getStringExtra(EXTRA_LEAD)?.let { LeadStore.get(this, it) }?.let { l ->
+                nv.leadId = l.id; nv.name = l.name; nv.mobile = l.mobile
+                nv.address = l.visitAddress.ifBlank { l.area }; nv.monthlyBill = l.bill.filter { it.isDigit() }
+                if (l.finance == "Loan") nv.funding = "Loan"
+                if (l.visitLat != 0.0) { nv.lat = l.visitLat; nv.lng = l.visitLng }
+            }
+            VisitStore.save(this, nv)
+        }
         if (number != null && v.isQuoted) step = 4
 
         val root = vertical { setBackgroundColor(Ui.BG) }

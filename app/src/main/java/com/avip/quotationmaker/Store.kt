@@ -220,7 +220,7 @@ object Remote {
 
     fun visitSummary(c: Context, v: Visit): JSONObject {
         val p = v.pkg
-        return JSONObject().put("kind", "visit").put("number", v.number)
+        return JSONObject().put("kind", "visit").put("number", v.number).put("leadId", v.leadId)
             .put("visitDate", day.format(Date(v.createdAt)))
             .put("officer", v.officerName.ifBlank { Officer.name(c) }).put("officerMobile", v.officerMobile.ifBlank { Officer.mobile(c) })
             .put("customer", v.name).put("mobile", v.mobile).put("address", v.address)
@@ -308,6 +308,13 @@ object Remote {
                 sending = false
             }
         }.start()
+    }
+
+    /** Items still waiting to be sent (oldest first). */
+    fun pending(c: Context): List<JSONObject> {
+        val p = c.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val arr = synchronized(this) { try { JSONArray(p.getString("pending", "[]") ?: "[]") } catch (_: Exception) { JSONArray() } }
+        return (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
     }
 
     /** Removes queued uploads of the given visits (after an office reset). */
