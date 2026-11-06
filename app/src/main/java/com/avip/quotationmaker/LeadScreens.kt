@@ -94,10 +94,10 @@ fun Activity.leadCard(l: Lead, showExec: Boolean = false, onClick: () -> Unit): 
 /** What to do next with a lead, and in which colour. */
 fun nextLine(l: Lead): Pair<String, Int> = when {
     l.stage == Lead.LOST -> tr("Lost: ", "Lost: ") + l.lostReason to Ui.MUTED
-    l.stage == Lead.BOOKED -> tr("Booked ✓", "Booked ✓") + if (l.visitNumber.isNotBlank()) " · " + l.visitNumber else "" to Ui.BRAND
+    l.stage == Lead.BOOKED -> (tr("Booked ✓", "Booked ✓") + (if (l.visitNumber.isNotBlank()) " · " + l.visitNumber else "")) to Ui.BRAND
     l.stage == Lead.VISIT && l.visitAt > 0 -> tr("Visit: ", "Visit: ") + When.short(l.visitAt) to 0xFF7A4E00.toInt()
     l.callOverdue -> tr("Call बाकी (overdue): ", "Call overdue: ") + When.short(l.nextAt) to 0xFFB3261E.toInt()
-    l.nextAt > 0 -> tr("Call back: ", "Call back: ") + When.short(l.nextAt) + if (l.nextNote.isNotBlank()) " · " + l.nextNote else "" to if (l.callDue) 0xFFB3261E.toInt() else Ui.TEXT
+    l.nextAt > 0 -> (tr("Call back: ", "Call back: ") + When.short(l.nextAt) + (if (l.nextNote.isNotBlank()) " · " + l.nextNote else "")) to (if (l.callDue) 0xFFB3261E.toInt() else Ui.TEXT)
     l.stage == Lead.NEW -> tr("अभी call करें · ", "Call now · ") + When.ago(l.createdAt) to 0xFFB3261E.toInt()
     else -> tr("अगला step तय करें", "Set the next step") to Ui.MUTED
 }
