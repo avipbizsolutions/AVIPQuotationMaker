@@ -197,8 +197,11 @@ class MainActivity : AppCompatActivity() {
             }, lp(0, WRAP, 1f))
         }, lp().margins(this, b = 10))
 
-        inner.addView(shortcut("Documents", tr("Brochure, rate card, forms — field में काम के", "Brochures, rate card, forms for the field"), R.drawable.ic_grid, 0xFF0E6B3A.toInt()) {
-            startActivity(Intent(this@MainActivity, DocumentsActivity::class.java))
+        inner.addView(horizontal {
+            addView(shortcut("Documents", tr("Brochure, rate card, forms", "Brochures, rate card, forms"), R.drawable.ic_grid, 0xFF0E6B3A.toInt()) {
+                startActivity(Intent(context, DocumentsActivity::class.java))
+            }, lp(0, WRAP, 1f).margins(context, r = 10))
+            addView(View(context), lp(0, WRAP, 1f))
         }, lp().margins(this, b = 14))
 
         if (Officer.teamView(this)) inner.addView(horizontal {
