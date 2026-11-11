@@ -108,6 +108,7 @@
         <activity android:name=".ScheduleActivity" android:exported="false" />
         <activity android:name=".TeamLeadsActivity" android:exported="false" />
         <activity android:name=".RouteReportActivity" android:exported="false" />
+        <activity android:name=".DocumentsActivity" android:exported="false" />
 
 
         <receiver

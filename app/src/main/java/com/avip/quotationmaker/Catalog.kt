@@ -26,6 +26,7 @@ object Catalog {
     /** Old location, used only until the new sheet is shared. */
     private const val OLD_SHEET_ID = "1DxfN4bjham7oLE-Su-NMhbRhporjH0681RzBFg-YeCs"
     private const val SETTINGS_TAB = "App Settings"
+    private const val DOCS_TAB = "Documents"
 
     /** Tab ids per sheet, so renaming a tab doesn't break the app. Names are the fallback. */
     private val GIDS = mapOf(
@@ -36,6 +37,8 @@ object Catalog {
     @Volatile var packages: List<SystemPackage> = emptyList()
         private set
     @Volatile var settings: AppSettings = AppSettings(emptyMap())
+        private set
+    @Volatile var documents: List<SalesDoc> = emptyList()
         private set
     @Volatile var updatedAt: Long = 0L
         private set
@@ -64,6 +67,7 @@ object Catalog {
         if (list.isEmpty()) false else {
             packages = list
             file(c, "settings").takeIf { it.exists() }?.let { settings = parseSettings(it.readText()) }
+            file(c, "documents").takeIf { it.exists() }?.let { documents = parseDocuments(it.readText()) }
             updatedAt = file(c, SystemType.ONGRID.name).lastModified()
             isLive = false
             true
@@ -88,10 +92,13 @@ object Catalog {
             }
             if (list.none { it.type == SystemType.ONGRID }) error("no on-grid systems")
             val sets = try { download(byName(sheet, SETTINGS_TAB)) } catch (_: Exception) { "" }
+            val docs = try { download(byName(sheet, DOCS_TAB)) } catch (_: Exception) { "" }
             packages = list
             settings = parseSettings(sets)
+            documents = parseDocuments(docs)
             texts.forEach { (t, csv) -> file(c, t.name).writeText(csv) }
             if (sets.isNotBlank()) file(c, "settings").writeText(sets)
+            if (docs.isNotBlank() && documents.isNotEmpty()) file(c, "documents").writeText(docs)
             updatedAt = System.currentTimeMillis()
             isLive = true
             true
@@ -188,7 +195,32 @@ object Catalog {
         rows.drop(1).forEach { r -> if (r.size >= 2 && r[0].isNotBlank()) map[r[0].trim()] = r[1].trim() }
         return AppSettings(map)
     }
+
+    /** The "Documents" tab: Title, Category, Link, Note, Active. Columns are matched by the header. */
+    private fun parseDocuments(csv: String): List<SalesDoc> {
+        val rows = Csv.parse(csv)
+        if (rows.isEmpty()) return emptyList()
+        val head = rows[0].map { it.trim().lowercase() }
+        if (head.firstOrNull() != "title") return emptyList() // a missing tab can come back as another tab
+        fun col(vararg names: String) = names.map { head.indexOf(it) }.firstOrNull { it >= 0 } ?: -1
+        val ci = col("category", "type", "group")
+        val li = col("link", "url", "drive link")
+        val ni = col("note", "notes", "detail")
+        val ai = col("active", "show", "enabled")
+        if (li < 0) return emptyList()
+        return rows.drop(1).mapNotNull { r ->
+            val title = r.getOrNull(0)?.trim().orEmpty()
+            val link = r.getOrNull(li)?.trim().orEmpty()
+            if (title.isBlank() || link.isBlank()) return@mapNotNull null
+            val off = ai >= 0 && r.getOrNull(ai)?.trim()?.lowercase() in listOf("no", "0", "false", "off", "hide")
+            if (off) return@mapNotNull null
+            SalesDoc(title, r.getOrNull(ci)?.trim().orEmpty().ifBlank { "General" }, link, r.getOrNull(ni)?.trim().orEmpty())
+        }
+    }
 }
+
+/** A document the office lists for the field team (a Google Drive link). */
+data class SalesDoc(val title: String, val category: String, val link: String, val note: String)
 
 /** Work that may outlive a screen, such as a price refresh started on the launch screen. */
 object AppScope : kotlinx.coroutines.CoroutineScope by kotlinx.coroutines.CoroutineScope(

@@ -195,6 +195,10 @@ class MainActivity : AppCompatActivity() {
             addView(shortcut("All Visits", "${visits.size} saved", R.drawable.ic_history, 0xFF6A1B9A.toInt()) {
                 startActivity(Intent(context, HistoryActivity::class.java))
             }, lp(0, WRAP, 1f))
+        }, lp().margins(this, b = 10))
+
+        inner.addView(shortcut("Documents", tr("Brochure, rate card, forms — field में काम के", "Brochures, rate card, forms for the field"), R.drawable.ic_grid, 0xFF0E6B3A.toInt()) {
+            startActivity(Intent(context, DocumentsActivity::class.java))
         }, lp().margins(this, b = 14))
 
         if (Officer.teamView(this)) inner.addView(horizontal {
