@@ -82,6 +82,7 @@ function doPost(e) {
     if (d.kind === 'leads') return reply(leadsFor(SpreadsheetApp.getActiveSpreadsheet(), u));
     if (d.kind === 'leadCheck') return reply(leadCheck(SpreadsheetApp.getActiveSpreadsheet(), u, d));
     if (d.kind === 'routeReport') return reply(routeReport(SpreadsheetApp.getActiveSpreadsheet(), u, d)); // founders only, read only
+    if (d.kind === 'docs') return reply(listDocs()); // field documents from the shared Drive folder, read only
     lock.waitLock(20000);
     const book = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -569,4 +570,41 @@ function routeReport(book, u, d) {
   const execs = people.map(function (p) { return { name: p.name, mobile: p.mobile, hasData: !!execsSeen[p.mobile] }; });
   Object.keys(execsSeen).forEach(function (m) { if (!people.some(function (p) { return p.mobile === m; })) execs.push({ name: execsSeen[m], mobile: m, hasData: true }); });
   return { ok: true, date: want, routes: out, execs: execs };
+}
+
+
+// ---------------------------------------------------------------- field documents
+
+/**
+ * Documents for the sales team, read from one shared Google Drive folder set in the script
+ * property DOCS_FOLDER (the folder's id). Files sitting directly in the folder show under
+ * "General"; each sub-folder becomes a category, so the office just drops files in — no app
+ * update, no per-file list. Share the folder "Anyone with the link – Viewer" so staff can open them.
+ */
+function listDocs() {
+  const fid = clean(PropertiesService.getScriptProperties().getProperty('DOCS_FOLDER'));
+  if (!fid) return { ok: true, documents: [], note: 'DOCS_FOLDER not set' };
+  let root;
+  try { root = DriveApp.getFolderById(fid); } catch (e) { return { ok: true, documents: [], note: 'folder not found' }; }
+  const out = [];
+  const seen = {};
+  function ext(name) { const m = name.match(/\.([A-Za-z0-9]{1,5})$/); return m ? m[1].toUpperCase() : ''; }
+  function add(folder, category) {
+    const it = folder.getFiles();
+    let count = 0;
+    while (it.hasNext() && count < 300) {
+      const f = it.next();
+      if (seen[f.getId()]) continue;
+      seen[f.getId()] = true;
+      count++;
+      const name = f.getName();
+      out.push({ title: name.replace(/\.[^.]+$/, ''), category: category, link: f.getUrl(), note: ext(name), updated: f.getLastUpdated().getTime() });
+    }
+  }
+  add(root, 'General');
+  const subs = root.getFolders();
+  let sc = 0;
+  while (subs.hasNext() && sc < 60) { const sf = subs.next(); sc++; add(sf, sf.getName()); }
+  out.sort(function (a, b) { return (a.category === 'General' ? 0 : 1) - (b.category === 'General' ? 0 : 1) || a.category.localeCompare(b.category) || b.updated - a.updated; });
+  return { ok: true, documents: out, count: out.length };
 }
